@@ -79,8 +79,6 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
             const updatedPlayers = getPlayersFromYjs(map);
             setAllPlayers(updatedPlayers);
 
-            console.log('updatedPlayers!!!', updatedPlayers);
-
             // 내 플레이어 데이터도 업데이트
             if (userIdRef.current) {
                 const myData = map.get(userIdRef.current);

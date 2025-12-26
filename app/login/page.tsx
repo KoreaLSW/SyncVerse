@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { loginAsGuest, loginWithGoogle, loadAuth } from '@/app/lib/auth';
+import { signIn } from 'next-auth/react';
+import { loginAsGuest, loadAuth } from '@/app/lib/auth';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -24,12 +25,8 @@ export default function LoginPage() {
     const handleGoogleLogin = async () => {
         setIsLoading(true);
         try {
-            // TODO: 구글 로그인 구현
-            await loginWithGoogle(); // 쿠키 + localStorage에 저장
-            router.push('/character-setup'); // 메인 페이지로 리다이렉트
-        } catch (error) {
-            console.error('구글 로그인 실패:', error);
-            alert('구글 로그인은 아직 구현되지 않았습니다.');
+            // 성공하면 NextAuth가 callbackUrl로 보냄
+            await signIn('google', { callbackUrl: '/character-setup' });
         } finally {
             setIsLoading(false);
         }

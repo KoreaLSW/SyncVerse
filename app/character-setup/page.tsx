@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { CharacterAppearance } from '@/app/lib/types';
 import {
@@ -19,6 +20,7 @@ const COLORS: CharacterAppearance['headColor'][] = [
 ];
 
 export default function CharacterSetupPage() {
+    const { data: session } = useSession();
     const router = useRouter();
 
     const auth = useMemo(() => loadAuth(), []);
@@ -30,9 +32,16 @@ export default function CharacterSetupPage() {
     >(auth?.bodyColor ?? 'amber');
 
     useEffect(() => {
-        // 혹시 미들웨어가 누락되었을 때를 대비한 안전장치
-        if (!auth) router.replace('/login');
-    }, [auth, router]);
+        // 구글 로그인으로 들어왔는데 syncverse_auth가 아직 없으면 생성
+        if (!auth && session?.user) {
+            const googleId =
+                (session.user as any).id ??
+                (session.user.email ? `google_${session.user.email}` : null);
+            if (googleId) {
+                saveAuth({ userId: String(googleId), authType: 'google' });
+            }
+        }
+    }, [auth, session]);
 
     const { head, body } = getCharacterImagePath(headColor, bodyColor);
     const bgPos = getSpriteBackgroundPosition('down', 0);

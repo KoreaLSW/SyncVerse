@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { getToken } from 'next-auth/jwt';
 
 function parseAuthCookie(raw?: string) {
     if (!raw) return null;
-    // 쿠키가 인코딩되어 있을 수도/없을 수도 있어서 둘 다 시도
     try {
         return JSON.parse(decodeURIComponent(raw));
     } catch {
@@ -15,17 +15,24 @@ function parseAuthCookie(raw?: string) {
     }
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
     const pathname = request.nextUrl.pathname;
 
+    // 1) 기존 커스텀 쿠키(게스트/외형 저장)
     const authCookie = request.cookies.get('syncverse_auth')?.value;
     const auth = parseAuthCookie(authCookie);
-    const isAuthenticated = !!auth;
+
+    // 2) NextAuth 로그인 상태(구글)
+    const nextAuthToken = await getToken({
+        req: request,
+        secret: process.env.NEXTAUTH_SECRET,
+    });
+
+    const isAuthenticated = !!auth || !!nextAuthToken;
     const hasAppearance = !!auth?.headColor && !!auth?.bodyColor;
 
     if (pathname === '/login') {
         if (isAuthenticated) {
-            // 이미 로그인한 사람은 로그인페이지 못 보게
             return NextResponse.redirect(
                 new URL(hasAppearance ? '/' : '/character-setup', request.url)
             );
@@ -34,23 +41,19 @@ export function middleware(request: NextRequest) {
     }
 
     if (pathname === '/character-setup') {
-        // 로그인만 되어 있으면 언제든 수정 가능
-        if (!isAuthenticated) {
+        if (!isAuthenticated)
             return NextResponse.redirect(new URL('/login', request.url));
-        }
+        // 외형 있으면 들어가지 못하게 막지 말고(수정 가능), 여기서는 통과
         return NextResponse.next();
     }
 
     if (pathname === '/') {
-        if (!isAuthenticated) {
+        if (!isAuthenticated)
             return NextResponse.redirect(new URL('/login', request.url));
-        }
-        // “처음 한 번만” 강제: 외형 없을 때만 설정 페이지로 보냄
-        if (!hasAppearance) {
+        if (!hasAppearance)
             return NextResponse.redirect(
                 new URL('/character-setup', request.url)
             );
-        }
         return NextResponse.next();
     }
 
