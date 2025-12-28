@@ -54,14 +54,12 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
 
         const id = getOrCreateUserId();
         userIdRef.current = id;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setUserId(id);
     }, [enabled]);
 
     // Yjs Map 초기화
     useEffect(() => {
         if (!ydoc || !enabled) {
-            // eslint-disable-next-line react-hooks/set-state-in-effect
             setPlayersMap(null);
             return;
         }
