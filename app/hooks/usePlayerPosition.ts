@@ -124,7 +124,23 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
                 : null;
 
         if (!existing) {
-            const defaultData = getDefaultPlayerData(userId);
+            // 화면 중앙 좌표 계산
+            const centerX = boundary
+                ? (boundary.minX + boundary.maxX) / 2
+                : typeof window !== 'undefined'
+                ? window.innerWidth / 2
+                : 0;
+            const centerY = boundary
+                ? (boundary.minY + boundary.maxY) / 2
+                : typeof window !== 'undefined'
+                ? window.innerHeight / 2
+                : 0;
+
+            const defaultData = getDefaultPlayerData(
+                userId,
+                { x: centerX, y: centerY },
+                auth?.email
+            );
             const initial = appearance
                 ? { ...defaultData, ...appearance }
                 : defaultData;
@@ -132,6 +148,11 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
             playersMap.set(userId, initial);
             setMyPlayer({ id: userId, ...initial });
             return;
+        }
+
+        // email이 없는데 auth에 email이 있으면 업데이트
+        if (auth?.email && !existing.email) {
+            setPlayerData(playersMap, userId, { email: auth.email });
         }
 
         if (
@@ -148,7 +169,7 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
         }
 
         setMyPlayer({ id: userId, ...existing });
-    }, [enabled, playersMap, userId]);
+    }, [enabled, playersMap, userId, boundary]);
 
     // 내 위치 업데이트 함수 (방향 정보 포함)
     const updateMyPosition = useCallback(

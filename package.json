@@ -10,13 +10,15 @@
   },
   "dependencies": {
     "@hocuspocus/provider": "^3.4.1",
+    "@supabase/supabase-js": "^2.89.0",
     "axios": "^1.13.2",
     "next": "16.0.8",
     "next-auth": "^4.24.13",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "swr": "^2.3.7",
-    "yjs": "^13.6.27"
+    "yjs": "^13.6.27",
+    "zustand": "^5.0.9"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

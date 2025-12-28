@@ -69,11 +69,16 @@ export function getCharacterImagePath(
 }
 
 // 기본 플레이어 데이터 생성
-export function getDefaultPlayerData(userId: string): PlayerData {
+export function getDefaultPlayerData(
+    userId: string,
+    initialPosition?: { x: number; y: number },
+    email?: string
+): PlayerData {
     return {
         userId,
-        x: 0,
-        y: 0,
+        email,
+        x: initialPosition?.x ?? 0,
+        y: initialPosition?.y ?? 0,
         headColor: 'amber',
         bodyColor: 'amber',
         direction: 'down', // 기본 방향

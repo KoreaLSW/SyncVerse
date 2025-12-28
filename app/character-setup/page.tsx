@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import type { CharacterAppearance } from '@/app/lib/types';
@@ -8,7 +8,7 @@ import {
     getCharacterImagePath,
     getSpriteBackgroundPosition,
 } from '@/app/lib/playerUtils';
-import { loadAuth, saveAuth } from '@/app/lib/auth';
+import { useAuthStore } from '@/app/stores/authStore';
 
 const COLORS: CharacterAppearance['headColor'][] = [
     'amber',
@@ -22,39 +22,59 @@ const COLORS: CharacterAppearance['headColor'][] = [
 export default function CharacterSetupPage() {
     const { data: session } = useSession();
     const router = useRouter();
+    const { user, login, updateUser, initialize } = useAuthStore();
 
-    const auth = useMemo(() => loadAuth(), []);
     const [headColor, setHeadColor] = useState<
         CharacterAppearance['headColor']
-    >(auth?.headColor ?? 'amber');
+    >(user?.headColor ?? 'amber');
     const [bodyColor, setBodyColor] = useState<
         CharacterAppearance['bodyColor']
-    >(auth?.bodyColor ?? 'amber');
+    >(user?.bodyColor ?? 'amber');
 
+    // 초기화 및 구글 로그인 처리
     useEffect(() => {
-        // 구글 로그인으로 들어왔는데 syncverse_auth가 아직 없으면 생성
-        if (!auth && session?.user) {
+        initialize();
+
+        // 구글 로그인으로 들어왔는데 user가 아직 없으면 생성
+        if (!user && session?.user) {
             const googleId =
                 (session.user as any).id ??
                 (session.user.email ? `google_${session.user.email}` : null);
             if (googleId) {
-                saveAuth({ userId: String(googleId), authType: 'google' });
+                login({
+                    userId: String(googleId),
+                    authType: 'google',
+                    email: session.user.email ?? undefined,
+                    name: session.user.name ?? undefined,
+                });
             }
         }
-    }, [auth, session]);
+
+        // 인증되지 않았으면 로그인 페이지로
+        if (!user && !session?.user) {
+            router.replace('/login');
+        }
+    }, [user, session, router, login, initialize]);
+
+    // user가 변경되면 색상 초기화
+    useEffect(() => {
+        if (user) {
+            if (user.headColor) setHeadColor(user.headColor);
+            if (user.bodyColor) setBodyColor(user.bodyColor);
+        }
+    }, [user]);
 
     const { head, body } = getCharacterImagePath(headColor, bodyColor);
     const bgPos = getSpriteBackgroundPosition('down', 0);
 
     const onSave = () => {
-        const current = loadAuth();
-        if (!current) {
+        if (!user) {
             router.replace('/login');
             return;
         }
 
-        saveAuth({
-            ...current,
+        // zustand store를 통해 업데이트
+        updateUser({
             headColor,
             bodyColor,
         });
@@ -62,7 +82,13 @@ export default function CharacterSetupPage() {
         router.push('/');
     };
 
-    if (!auth) return null;
+    if (!user) {
+        return (
+            <div className='min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100'>
+                <div className='text-gray-600'>로딩 중...</div>
+            </div>
+        );
+    }
 
     return (
         <div className='min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-6'>
@@ -136,7 +162,7 @@ export default function CharacterSetupPage() {
                                                 backgroundRepeat: 'no-repeat',
                                                 backgroundSize: 'auto',
                                                 imageRendering: 'pixelated',
-                                                transform: 'scale(0.7)', // 썸네일 안에서 적당히 축소
+                                                transform: 'scale(0.7)',
                                                 transformOrigin: 'center',
                                             }}
                                         />

@@ -1,36 +1,46 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { loginAsGuest, loadAuth } from '@/app/lib/auth';
+import { useAuthStore } from '@/app/stores/authStore';
 
 export default function LoginPage() {
     const router = useRouter();
-    const [isLoading, setIsLoading] = useState(false);
+    const { user, initialize, loginAsGuest, isLoading } = useAuthStore();
 
-    // 이미 로그인되어 있으면 메인으로 리다이렉트 (클라이언트 체크)
+    // 초기화 및 리다이렉트 체크
     useEffect(() => {
-        const auth = loadAuth();
-        if (auth) {
-            router.replace('/');
+        initialize();
+
+        if (user) {
+            // 캐릭터 외형이 설정되어 있으면 메인으로, 없으면 캐릭터 설정으로
+            const hasAppearance = !!(user.headColor && user.bodyColor);
+            router.replace(hasAppearance ? '/' : '/character-setup');
         }
-    }, [router]);
+    }, [user, router, initialize]);
 
     const handleGuestLogin = () => {
-        loginAsGuest(); // 쿠키 + localStorage에 저장
-        router.push('/character-setup'); // 메인 페이지로 리다이렉트
+        loginAsGuest(); // zustand store 사용
+        router.push('/character-setup');
     };
 
     const handleGoogleLogin = async () => {
-        setIsLoading(true);
         try {
-            // 성공하면 NextAuth가 callbackUrl로 보냄
+            // NextAuth는 별도 처리 (성공하면 callback에서 처리)
             await signIn('google', { callbackUrl: '/character-setup' });
-        } finally {
-            setIsLoading(false);
+        } catch (error) {
+            console.error('구글 로그인 실패:', error);
         }
     };
+
+    if (isLoading) {
+        return (
+            <div className='fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100'>
+                <div className='text-gray-600'>로딩 중...</div>
+            </div>
+        );
+    }
 
     return (
         <div className='fixed inset-0 flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100'>
@@ -46,8 +56,7 @@ export default function LoginPage() {
                     {/* 구글 로그인 버튼 */}
                     <button
                         onClick={handleGoogleLogin}
-                        disabled={isLoading}
-                        className='w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+                        className='w-full flex items-center justify-center gap-3 bg-white border-2 border-gray-300 rounded-lg px-6 py-3 text-gray-700 font-medium hover:bg-gray-50 hover:border-gray-400 transition-colors'
                     >
                         <svg
                             className='w-5 h-5'

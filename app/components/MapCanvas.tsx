@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useYjs } from '@/app/hooks/useYjs';
 import { usePlayerPosition } from '@/app/hooks/usePlayerPosition';
 import {
@@ -9,6 +9,8 @@ import {
 } from '@/app/hooks/useKeyboardMovement';
 import { Character } from './Character';
 import { useRouter } from 'next/navigation';
+import { useUsers } from '../hooks/useUsers';
+import { useAuthStore } from '../stores/authStore';
 
 interface MapCanvasProps {
     docName?: string; // Yjs 문서 이름 (방/채널 이름)
@@ -20,8 +22,8 @@ export function MapCanvas({
     className = '',
 }: MapCanvasProps) {
     const router = useRouter(); // 추가
-    // Yjs 연결
     const yjsState = useYjs(docName);
+    const { getNickname } = useUsers(); // SWR hook 사용
     // 게임 영역 크기 관리
     const canvasRef = useRef<HTMLDivElement>(null);
     const [boundary, setBoundary] = useState<Boundary>({
@@ -80,6 +82,14 @@ export function MapCanvas({
     // 연결 상태 표시
     const isConnected = !!yjsState;
 
+    // 플레이어 목록에 닉네임 미리 매핑 (성능 최적화)
+    const playersWithNicknames = useMemo(() => {
+        return allPlayers.map((player) => ({
+            ...player,
+            nickname: player.email ? getNickname(player.email) : undefined,
+        }));
+    }, [allPlayers, getNickname]);
+
     return (
         <div className={`relative w-full h-full ${className}`}>
             {/* 게임 캔버스 영역 */}
@@ -116,14 +126,15 @@ export function MapCanvas({
                 </button>
 
                 {/* 모든 플레이어 렌더링 */}
-                {isConnected && allPlayers.length > 0 && (
+                {isConnected && playersWithNicknames.length > 0 && (
                     <div className='absolute inset-0'>
-                        {allPlayers.map((player) => (
+                        {playersWithNicknames.map((player) => (
                             <Character
                                 key={player.id}
                                 player={player}
                                 isMe={player.id === userId}
                                 size={64}
+                                nickname={player.nickname}
                             />
                         ))}
                     </div>

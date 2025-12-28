@@ -114,9 +114,3 @@ export function loginAsGuest(): AuthUser {
     saveAuth(user);
     return user;
 }
-
-// 구글 로그인 (추후 구현)
-export async function loginWithGoogle(): Promise<AuthUser> {
-    // TODO: 구글 OAuth 구현
-    throw new Error('구글 로그인은 추후 구현 예정입니다.');
-}
