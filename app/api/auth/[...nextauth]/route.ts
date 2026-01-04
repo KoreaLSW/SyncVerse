@@ -21,12 +21,16 @@ const handler = NextAuth({
                     const nickname =
                         user.name || user.email.split('@')[0] || 'User';
 
+                    // 🚀 username 생성: 이메일의 @ 앞부분 추출
+                    const username = user.email.split('@')[0] || 'user';
+
                     // users 테이블에 사용자 데이터 생성 (이미 존재하면 에러 무시)
+                    // avatar_config는 upsert에서 제외하여 기존 설정을 유지함
                     const { error } = await supabase.from('users').upsert(
                         {
                             email: user.email,
                             nickname: nickname,
-                            avatar_config: {}, // 기본값
+                            username: username, // 🚀 username 추가
                         },
                         {
                             onConflict: 'email', // email이 중복이면 업데이트
@@ -51,6 +55,7 @@ const handler = NextAuth({
             // 최초 로그인 시 providerAccountId(구글 sub)를 저장
             if (account?.provider === 'google' && account.providerAccountId) {
                 token.userId = `google_${account.providerAccountId}`;
+                token.username = user?.email ? user.email.split('@')[0] : null;
                 token.email = user?.email ?? null;
             }
             return token;
@@ -61,6 +66,8 @@ const handler = NextAuth({
             if (session.user) {
                 (session.user as any).id = (token as any).userId ?? null;
                 (session.user as any).email = token.email ?? session.user.email;
+                (session.user as any).username =
+                    (token as any).username ?? null;
             }
             return session;
         },

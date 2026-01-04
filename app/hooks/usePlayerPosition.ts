@@ -22,6 +22,7 @@ import {
     type Boundary,
 } from '@/app/hooks/useKeyboardMovement';
 import { loadAuth } from '../lib/auth';
+import { getPlayerPosition } from '../lib/userUtils';
 
 interface UsePlayerPositionOptions {
     ydoc: Y.Doc | null;
@@ -47,6 +48,10 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
 
     // 내 플레이어 데이터
     const [myPlayer, setMyPlayer] = useState<Player | null>(null);
+
+    // 🚀 데이터 전송 최적화를 위한 Ref 추가
+    const lastUpdateTimeRef = useRef<number>(0);
+    const THROTTLE_MS = 25; // 전송 주기 (40ms = 초당 약 25회 전송)
 
     // 유저 ID 초기화
     useEffect(() => {
@@ -75,15 +80,43 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
         // 다른 플레이어 위치 변경 감지
         const handleMapChange = () => {
             const updatedPlayers = getPlayersFromYjs(map);
-            setAllPlayers(updatedPlayers);
+
+            // 🚀 최적화: 좌표 외에 메타데이터가 실제로 바뀐 경우에만 setAllPlayers 호출
+            setAllPlayers((prev) => {
+                if (prev.length !== updatedPlayers.length)
+                    return updatedPlayers;
+
+                const hasMetadataChanged = updatedPlayers.some((p) => {
+                    const op = prev.find((oldP) => oldP.id === p.id);
+                    if (!op) return true;
+                    return (
+                        p.direction !== op.direction ||
+                        p.isMoving !== op.isMoving ||
+                        p.headColor !== op.headColor ||
+                        p.bodyColor !== op.bodyColor ||
+                        (p.email || '') !== (op.email || '')
+                    );
+                });
+
+                return hasMetadataChanged ? updatedPlayers : prev;
+            });
 
             // 내 플레이어 데이터도 업데이트
             if (userIdRef.current) {
                 const myData = map.get(userIdRef.current);
                 if (myData) {
-                    setMyPlayer({
-                        id: userIdRef.current,
-                        ...myData,
+                    setMyPlayer((prev) => {
+                        if (!prev) return { id: userIdRef.current!, ...myData };
+                        if (
+                            prev.direction !== myData.direction ||
+                            prev.isMoving !== myData.isMoving ||
+                            prev.headColor !== myData.headColor ||
+                            prev.bodyColor !== myData.bodyColor ||
+                            (prev.email || '') !== (myData.email || '')
+                        ) {
+                            return { id: userIdRef.current!, ...myData };
+                        }
+                        return prev;
                     });
                     return;
                 }
@@ -107,7 +140,6 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
     }, [ydoc, enabled]);
 
     // (중요) 새로고침/재연결 레이스 방지:
-    // ydoc(playersMap)과 userId가 준비된 순간에 "내 플레이어 엔트리 존재"를 보장한다.
     useEffect(() => {
         if (!enabled) return;
         if (!playersMap) return;
@@ -122,29 +154,42 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
                 : null;
 
         if (!existing) {
-            // 화면 중앙 좌표 계산
-            const centerX = boundary
-                ? (boundary.minX + boundary.maxX) / 2
-                : typeof window !== 'undefined'
-                ? window.innerWidth / 2
-                : 0;
-            const centerY = boundary
-                ? (boundary.minY + boundary.maxY) / 2
-                : typeof window !== 'undefined'
-                ? window.innerHeight / 2
-                : 0;
+            // 🚀 DB에서 마지막 위치 가져오기
+            getPlayerPosition(auth?.username).then((savedPosition) => {
+                let initialX: number;
+                let initialY: number;
 
-            const defaultData = getDefaultPlayerData(
-                userId,
-                { x: centerX, y: centerY },
-                auth?.email
-            );
-            const initial = appearance
-                ? { ...defaultData, ...appearance }
-                : defaultData;
+                if (savedPosition) {
+                    // DB에 저장된 위치 사용
+                    initialX = savedPosition.x;
+                    initialY = savedPosition.y;
+                } else {
+                    // 저장된 위치가 없으면 화면 중앙
+                    initialX = boundary
+                        ? (boundary.minX + boundary.maxX) / 2
+                        : typeof window !== 'undefined'
+                        ? window.innerWidth / 2
+                        : 0;
+                    initialY = boundary
+                        ? (boundary.minY + boundary.maxY) / 2
+                        : typeof window !== 'undefined'
+                        ? window.innerHeight / 2
+                        : 0;
+                }
 
-            playersMap.set(userId, initial);
-            setMyPlayer({ id: userId, ...initial });
+                const defaultData = getDefaultPlayerData(
+                    userId,
+                    { x: initialX, y: initialY },
+                    auth?.email
+                );
+                const initial = appearance
+                    ? { ...defaultData, ...appearance }
+                    : defaultData;
+
+                playersMap.set(userId, initial);
+                setMyPlayer({ id: userId, ...initial });
+            });
+
             return;
         }
 
@@ -174,8 +219,6 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
         (delta: { dx: number; dy: number }, direction: CharacterDirection) => {
             if (!playersMap || !userIdRef.current || !enabled) return;
 
-            //console.log("delta", delta);
-
             const currentData = getPlayerData(playersMap, userIdRef.current);
             if (!currentData) return;
 
@@ -191,13 +234,25 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
                       y: currentData.y + delta.dy,
                   };
 
-            // Yjs Map에 위치 및 방향 업데이트
-            setPlayerData(playersMap, userIdRef.current, {
-                x: newPosition.x,
-                y: newPosition.y,
-                direction: direction, // 방향 저장
-                isMoving: true,
-            });
+            const now = Date.now();
+            const directionChanged = currentData.direction !== direction;
+
+            // 🚀 최적화 조건:
+            // 1. 방향이 바뀌었을 때 (즉시 전송)
+            // 2. 마지막 전송 후 THROTTLE_MS(40ms)가 지났을 때
+            if (
+                directionChanged ||
+                now - lastUpdateTimeRef.current > THROTTLE_MS
+            ) {
+                // Yjs Map에 위치 및 방향 업데이트
+                setPlayerData(playersMap, userIdRef.current, {
+                    x: newPosition.x,
+                    y: newPosition.y,
+                    direction: direction, // 방향 저장
+                    isMoving: true,
+                });
+                lastUpdateTimeRef.current = now;
+            }
         },
         [playersMap, boundary, enabled]
     );
@@ -207,13 +262,13 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
         (direction?: CharacterDirection) => {
             if (!playersMap || !userIdRef.current || !enabled) return;
 
-            const currentData = getPlayerData(playersMap, userIdRef.current);
-            if (!currentData) return;
-
             setPlayerData(playersMap, userIdRef.current, {
                 isMoving: false,
                 ...(direction ? { direction } : {}),
             });
+
+            // 🚀 정지 시 시간을 초기화하여 다음 움직임 시작 시 즉시 전송되도록 함
+            lastUpdateTimeRef.current = 0;
         },
         [playersMap, enabled]
     );
@@ -284,7 +339,6 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
         stopMyMotion,
         setMyPosition,
 
-        // 내부 상태
         playersMap,
     };
 }

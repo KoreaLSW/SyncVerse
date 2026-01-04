@@ -10,6 +10,7 @@ export interface AuthUser {
     authType: AuthType;
     email?: string; // 구글 로그인 시
     name?: string; // 구글 로그인 시
+    username?: string; // 🚀 구글 로그인 시 username
 
     headColor?: CharacterAppearance['headColor'];
     bodyColor?: CharacterAppearance['bodyColor'];

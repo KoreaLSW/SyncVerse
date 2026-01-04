@@ -30,7 +30,6 @@ export function useUsers(): UseUsersResponse {
     );
     // email -> nickname 매핑 생성
     const nicknameMap = useMemo(() => {
-        console.log('memo');
         const map = new Map<string, string>();
         if (data) {
             data.forEach((user) => {

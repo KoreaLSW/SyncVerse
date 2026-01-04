@@ -2,27 +2,71 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 import { useAuthStore } from '@/app/stores/authStore';
+import { apiClient } from '@/app/lib/api';
 
 export default function LoginPage() {
     const router = useRouter();
-    const { user, initialize, loginAsGuest, isLoading } = useAuthStore();
+    const { data: session } = useSession();
+    const { user, initialize, login, loginAsGuest, isLoading } = useAuthStore();
 
     // 초기화 및 리다이렉트 체크
     useEffect(() => {
         initialize();
+
+        // 🚀 구글 로그인 직후 스토어에 정보가 없다면 DB에서 정보를 가져와서 채워줌
+        if (session?.user && !user) {
+            const googleId = (session.user as any).id;
+            const username = (session.user as any).username;
+
+            if (username) {
+                apiClient
+                    .get(`/api/users/${username}`)
+                    .then((res: any) => {
+                        const dbUser = res.data.data;
+                        const avatarConfig = dbUser?.avatar_config || {};
+
+                        login({
+                            userId: String(googleId),
+                            authType: 'google',
+                            email: session.user?.email ?? undefined,
+                            name: session.user?.name ?? undefined,
+                            username: username,
+                            headColor: avatarConfig.headColor,
+                            bodyColor: avatarConfig.bodyColor,
+                        });
+                    })
+                    .catch((err: any) => {
+                        console.error('사용자 정보 로드 실패:', err);
+                        // 실패 시 최소 정보로 로그인 처리
+                        login({
+                            userId: String(googleId),
+                            authType: 'google',
+                            email: session.user?.email ?? undefined,
+                            name: session.user?.name ?? undefined,
+                            username: username,
+                        });
+                    });
+            }
+        }
 
         if (user) {
             // 캐릭터 외형이 설정되어 있으면 메인으로, 없으면 캐릭터 설정으로
             const hasAppearance = !!(user.headColor && user.bodyColor);
             router.replace(hasAppearance ? '/' : '/character-setup');
         }
-    }, [user, router, initialize]);
+    }, [user, session, router, initialize, login]);
 
     const handleGuestLogin = () => {
-        loginAsGuest(); // zustand store 사용
-        router.push('/character-setup');
+        if (
+            confirm(
+                '게스트로 입장하시면 채팅 기록 저장, 위치 저장 등 일부 기능이 제한됩니다.\n정말 게스트로 입장하시겠습니까?'
+            )
+        ) {
+            loginAsGuest(); // zustand store 사용
+            router.push('/character-setup');
+        }
     };
 
     const handleGoogleLogin = async () => {
@@ -105,8 +149,8 @@ export default function LoginPage() {
                     </button>
                 </div>
 
-                <p className='text-xs text-gray-500 text-center mt-6'>
-                    게스트로 입장하면 임시 ID가 발급됩니다
+                <p className='text-xs text-red-500 font-medium text-center mt-6'>
+                    ※ 게스트는 데이터 저장(위치, 채팅 등) 기능이 제한됩니다
                 </p>
             </div>
         </div>

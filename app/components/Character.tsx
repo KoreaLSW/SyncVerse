@@ -20,82 +20,70 @@ export const Character = memo(
         { player, isMe = false, size = 64, nickname },
         ref
     ) {
+        // 🚀 이제 이 로그는 좌표가 바뀔 때나 애니메이션 프레임이 바뀔 때도 찍히지 않습니다.
+        // 오직 방향 전환, 이동 시작/정지, 색상 변경 시에만 딱 1번 찍힙니다.
+        console.log(
+            `[Character] Render ${isMe ? '(나)' : '(타인)'}: ${player.id}`
+        );
+
         const { head, body } = getCharacterImagePath(
             player.headColor,
             player.bodyColor
         );
         const displayNickname = nickname || player.userId.slice(0, 8);
-
         const direction = player.direction || 'down';
         const isMoving = !!player.isMoving;
 
-        // 걷는 모션 애니메이션 상태
-        const [frameIndex, setFrameIndex] = useState(0);
-        const prevDirectionRef = useRef(direction);
-        const animationFrameRef = useRef<number | null>(null);
+        // 🚀 DOM 직접 조작을 위한 Ref들
+        const headRef = useRef<HTMLDivElement>(null);
+        const bodyRef = useRef<HTMLDivElement>(null);
         const lastFrameTimeRef = useRef<number>(0);
-        const frameIndexRef = useRef(0);
+        const frameIndexRef = useRef<number>(0);
 
-        // 🚀 좌표는 부모의 RAF가 직접 DOM으로 업데이트하므로 여기서는 제거됨
-        // 초기 transform만 설정 (부모가 덮어씀)
-
-        // 방향 변경 시 프레임 리셋
-        useEffect(() => {
-            if (prevDirectionRef.current !== direction) {
-                if (!isMoving) {
-                    setFrameIndex(0);
-                    frameIndexRef.current = 0;
-                }
-                prevDirectionRef.current = direction;
-            }
-        }, [direction, isMoving]);
-
-        // 걷는 모션 애니메이션
+        // 걷는 모션 애니메이션 (DOM 직접 조작)
         useEffect(() => {
             if (!isMoving) {
-                setFrameIndex(0);
-                frameIndexRef.current = 0;
-                if (animationFrameRef.current) {
-                    cancelAnimationFrame(animationFrameRef.current);
-                    animationFrameRef.current = null;
-                }
+                // 정지 시 0번 프레임으로 초기화
+                const bgPos = getSpriteBackgroundPosition(direction, 0);
+                if (headRef.current)
+                    headRef.current.style.backgroundPosition = bgPos;
+                if (bodyRef.current)
+                    bodyRef.current.style.backgroundPosition = bgPos;
                 return;
             }
 
-            const ANIMATION_SPEED = 100;
+            const ANIMATION_SPEED = 100; // 0.1초
             const MAX_FRAMES = 8;
+            let animationFrameId: number;
 
             const animate = (currentTime: number) => {
                 if (currentTime - lastFrameTimeRef.current >= ANIMATION_SPEED) {
+                    // 🚀 상태(State)를 바꾸지 않고 Ref와 DOM을 직접 수정!
                     frameIndexRef.current =
                         (frameIndexRef.current + 1) % MAX_FRAMES;
-                    setFrameIndex(frameIndexRef.current);
+                    const bgPos = getSpriteBackgroundPosition(
+                        direction,
+                        frameIndexRef.current
+                    );
+
+                    if (headRef.current)
+                        headRef.current.style.backgroundPosition = bgPos;
+                    if (bodyRef.current)
+                        bodyRef.current.style.backgroundPosition = bgPos;
+
                     lastFrameTimeRef.current = currentTime;
                 }
-                animationFrameRef.current = requestAnimationFrame(animate);
+                animationFrameId = requestAnimationFrame(animate);
             };
 
             lastFrameTimeRef.current = performance.now();
-            animationFrameRef.current = requestAnimationFrame(animate);
+            animationFrameId = requestAnimationFrame(animate);
 
-            return () => {
-                if (animationFrameRef.current) {
-                    cancelAnimationFrame(animationFrameRef.current);
-                    animationFrameRef.current = null;
-                }
-            };
-        }, [isMoving]);
+            return () => cancelAnimationFrame(animationFrameId);
+        }, [isMoving, direction]); // 방향이 바뀌거나 이동 상태가 바뀔 때만 효과 재설정
 
-        // 스프라이트 위치 계산
-        const currentFrameIndex = isMoving ? frameIndex : 0;
-        const headBgPosition = getSpriteBackgroundPosition(
-            direction,
-            currentFrameIndex
-        );
-        const bodyBgPosition = getSpriteBackgroundPosition(
-            direction,
-            currentFrameIndex
-        );
+        // 초기 배경 위치 계산
+        const initialBgPos = getSpriteBackgroundPosition(direction, 0);
 
         return (
             <div
@@ -112,54 +100,57 @@ export const Character = memo(
                     style={{ width: `${size}px`, height: `${size}px` }}
                 >
                     <div
+                        ref={bodyRef}
                         className='absolute inset-0'
                         style={{
                             backgroundImage: `url(${body})`,
-                            backgroundPosition: bodyBgPosition,
+                            backgroundPosition: initialBgPos,
                             backgroundSize: 'auto',
                             imageRendering: 'pixelated',
                         }}
                     />
                     <div
+                        ref={headRef}
                         className='absolute inset-0'
                         style={{
                             backgroundImage: `url(${head})`,
-                            backgroundPosition: headBgPosition,
+                            backgroundPosition: initialBgPos,
                             backgroundSize: 'auto',
                             imageRendering: 'pixelated',
                         }}
                     />
                 </div>
 
-                {isMe && (
-                    <div className='absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full'>
-                        <div className='bg-blue-500 text-white text-xs px-2 py-0.5 rounded whitespace-nowrap'>
+                {/* 닉네임 표시 */}
+                <div className='absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center gap-1'>
+                    {isMe && (
+                        <div className='bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm'>
                             나
                         </div>
-                    </div>
-                )}
-
-                {process.env.NODE_ENV === 'development' && (
-                    <div className='absolute top-full left-1/2 -translate-x-1/2 mt-1 text-xs text-gray-600 bg-white/80 px-1 rounded'>
+                    )}
+                    <div className='bg-black/60 text-white text-xs px-2 py-0.5 rounded-full whitespace-nowrap backdrop-blur-sm border border-white/10'>
                         {displayNickname}
                     </div>
-                )}
+                </div>
             </div>
         );
     }),
     // 🚀 좌표(x, y)를 비교에서 완전히 제외 (부모의 RAF가 직접 DOM 업데이트)
     (prevProps, nextProps) => {
+        const p = prevProps.player;
+        const n = nextProps.player;
+
         return (
-            prevProps.player.direction === nextProps.player.direction &&
-            prevProps.player.isMoving === nextProps.player.isMoving &&
-            prevProps.player.headColor === nextProps.player.headColor &&
-            prevProps.player.bodyColor === nextProps.player.bodyColor &&
-            prevProps.player.userId === nextProps.player.userId &&
-            prevProps.player.id === nextProps.player.id &&
+            p.direction === n.direction &&
+            p.isMoving === n.isMoving &&
+            p.headColor === n.headColor &&
+            p.bodyColor === n.bodyColor &&
+            p.userId === n.userId &&
+            p.id === n.id &&
             prevProps.isMe === nextProps.isMe &&
             prevProps.size === nextProps.size &&
-            (prevProps.nickname ?? '') === (nextProps.nickname ?? '') &&
-            (prevProps.player.email ?? '') === (nextProps.player.email ?? '')
+            (prevProps.nickname || '') === (nextProps.nickname || '') &&
+            (p.email || '') === (n.email || '')
             // x, y는 비교하지 않음!
         );
     }

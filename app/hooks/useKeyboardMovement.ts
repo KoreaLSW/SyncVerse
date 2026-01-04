@@ -53,7 +53,8 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
     // API 호환/확장성을 위해 옵션으로 유지한다.
     void _boundary;
 
-    const [keys, setKeys] = useState<MovementState>({
+    // 🚀 키 상태를 Ref로 관리하여 리렌더링 방지
+    const keysRef = useRef<MovementState>({
         up: false,
         down: false,
         left: false,
@@ -68,23 +69,44 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
         (event: KeyboardEvent) => {
             if (!enabled) return;
 
+            let changed = false;
             // 방향키 감지
             switch (event.key) {
                 case 'ArrowUp':
+                case 'w':
+                case 'W':
                     event.preventDefault();
-                    setKeys((prev) => ({ ...prev, up: true }));
+                    if (!keysRef.current.up) {
+                        keysRef.current.up = true;
+                        changed = true;
+                    }
                     break;
                 case 'ArrowDown':
+                case 's':
+                case 'S':
                     event.preventDefault();
-                    setKeys((prev) => ({ ...prev, down: true }));
+                    if (!keysRef.current.down) {
+                        keysRef.current.down = true;
+                        changed = true;
+                    }
                     break;
                 case 'ArrowLeft':
+                case 'a':
+                case 'A':
                     event.preventDefault();
-                    setKeys((prev) => ({ ...prev, left: true }));
+                    if (!keysRef.current.left) {
+                        keysRef.current.left = true;
+                        changed = true;
+                    }
                     break;
                 case 'ArrowRight':
+                case 'd':
+                case 'D':
                     event.preventDefault();
-                    setKeys((prev) => ({ ...prev, right: true }));
+                    if (!keysRef.current.right) {
+                        keysRef.current.right = true;
+                        changed = true;
+                    }
                     break;
             }
         },
@@ -98,16 +120,24 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
 
             switch (event.key) {
                 case 'ArrowUp':
-                    setKeys((prev) => ({ ...prev, up: false }));
+                case 'w':
+                case 'W':
+                    keysRef.current.up = false;
                     break;
                 case 'ArrowDown':
-                    setKeys((prev) => ({ ...prev, down: false }));
+                case 's':
+                case 'S':
+                    keysRef.current.down = false;
                     break;
                 case 'ArrowLeft':
-                    setKeys((prev) => ({ ...prev, left: false }));
+                case 'a':
+                case 'A':
+                    keysRef.current.left = false;
                     break;
                 case 'ArrowRight':
-                    setKeys((prev) => ({ ...prev, right: false }));
+                case 'd':
+                case 'D':
+                    keysRef.current.right = false;
                     break;
             }
         },
@@ -146,6 +176,7 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
             let dx = 0;
             let dy = 0;
 
+            const keys = keysRef.current;
             if (keys.up) dy -= speed * frameMultiplier;
             if (keys.down) dy += speed * frameMultiplier;
             if (keys.left) dx -= speed * frameMultiplier;
@@ -169,6 +200,7 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
                 : keys.right
                 ? 'right'
                 : lastDirectionRef.current; // 키가 없으면 마지막 방향 유지
+
             // 마지막 방향 저장(키가 눌려있을 때만 갱신)
             if (keys.up || keys.down || keys.left || keys.right) {
                 lastDirectionRef.current = characterDirection;
@@ -179,7 +211,17 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
                 onMove({ dx, dy }, characterDirection);
             }
 
-            //console.log("characterDirection", characterDirection);
+            // 정지 감지
+            const nowMoving = keys.up || keys.down || keys.left || keys.right;
+            const wasMoving = wasMovingRef.current;
+
+            if (nowMoving) {
+                wasMovingRef.current = true;
+            } else if (wasMoving) {
+                wasMovingRef.current = false;
+                onStop?.(lastDirectionRef.current);
+            }
+
             animationFrameId = requestAnimationFrame(updateMovement);
         };
 
@@ -190,47 +232,14 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
                 cancelAnimationFrame(animationFrameId);
             }
         };
-    }, [enabled, keys, speed, onMove]);
-
-    // 키 입력 기반 "정지" 감지: moving -> not moving 전환 시 onStop을 딱 1번 호출
-    useEffect(() => {
-        if (!enabled) return;
-
-        const nowMoving = keys.up || keys.down || keys.left || keys.right;
-        const wasMoving = wasMovingRef.current;
-
-        if (nowMoving) {
-            // moving 상태 진입
-            wasMovingRef.current = true;
-        } else if (wasMoving) {
-            // moving -> stop 전환
-            wasMovingRef.current = false;
-            onStop?.(lastDirectionRef.current);
-        }
-    }, [enabled, keys.up, keys.down, keys.left, keys.right, onStop]);
-
-    // 현재 이동 방향 반환 (UI 표시용)
-    const movementDirection = {
-        dx: (keys.right ? 1 : 0) - (keys.left ? 1 : 0),
-        dy: (keys.down ? 1 : 0) - (keys.up ? 1 : 0),
-    };
-
-    // 캐릭터 방향 계산 (반환용)
-    const characterDirection: CharacterDirection = keys.up
-        ? 'up'
-        : keys.down
-        ? 'down'
-        : keys.left
-        ? 'left'
-        : keys.right
-        ? 'right'
-        : 'down'; // 기본값
+    }, [enabled, speed, onMove, onStop]);
 
     return {
-        keys, // 현재 눌린 키 상태
-        movementDirection, // 이동 방향 (-1, 0, 1)
-        characterDirection, // 캐릭터 방향 ("up" | "down" | "left" | "right")
-        isMoving: keys.up || keys.down || keys.left || keys.right, // 이동 중인지 여부
+        isMoving:
+            keysRef.current.up ||
+            keysRef.current.down ||
+            keysRef.current.left ||
+            keysRef.current.right,
     };
 }
 
