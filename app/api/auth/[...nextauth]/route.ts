@@ -1,6 +1,6 @@
 import NextAuth from 'next-auth';
 import Google from 'next-auth/providers/google';
-import { supabase } from '@/app/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 const handler = NextAuth({
     secret: process.env.NEXTAUTH_SECRET,
@@ -52,11 +52,25 @@ const handler = NextAuth({
         },
 
         async jwt({ token, account, user }) {
-            // 최초 로그인 시 providerAccountId(구글 sub)를 저장
-            if (account?.provider === 'google' && account.providerAccountId) {
-                token.userId = `google_${account.providerAccountId}`;
-                token.username = user?.email ? user.email.split('@')[0] : null;
-                token.email = user?.email ?? null;
+            // 구글 로그인인 경우 DB에서 실제 UUID와 username, nickname을 가져와서 토큰에 저장
+            if (account?.provider === 'google' && user?.email) {
+                const { data: dbUser } = await supabase
+                    .from('users')
+                    .select('id, username, nickname')
+                    .eq('email', user.email)
+                    .single();
+
+                if (dbUser) {
+                    token.userId = dbUser.id; // ✅ DB의 실제 UUID (UUID 형식)
+                    token.username = dbUser.username;
+                    token.nickname = dbUser.nickname; // ✅ 닉네임 추가
+                } else {
+                    // 최초 로그인 등 DB에 아직 반영되지 않은 경우의 fallback
+                    token.userId = `google_${account.providerAccountId}`;
+                    token.username = user.email.split('@')[0];
+                    token.nickname = user.name || token.username;
+                }
+                token.email = user.email;
             }
             return token;
         },
@@ -68,6 +82,8 @@ const handler = NextAuth({
                 (session.user as any).email = token.email ?? session.user.email;
                 (session.user as any).username =
                     (token as any).username ?? null;
+                (session.user as any).nickname =
+                    (token as any).nickname ?? null; // ✅ 닉네임 세션에 추가
             }
             return session;
         },

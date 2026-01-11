@@ -1,6 +1,6 @@
 // app/api/users/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/app/lib/supabase';
+import { supabase } from '@/lib/supabase';
 
 // GET /api/users/[id] - 특정 사용자 조회
 export async function GET(

@@ -10,17 +10,17 @@ import {
     setPlayerData,
     getPlayerData,
     getDefaultPlayerData,
-} from '@/app/lib/playerUtils';
+} from '@/lib/playerUtils';
 import type {
     Player,
     PlayerData,
     PlayerPosition,
     CharacterDirection,
-} from '@/app/lib/types';
+} from '@/lib/types';
 import {
     calculateNewPosition,
     type Boundary,
-} from '@/app/hooks/useKeyboardMovement';
+} from '@/hooks/useKeyboardMovement';
 import { loadAuth } from '../lib/auth';
 import { getPlayerPosition } from '../lib/userUtils';
 

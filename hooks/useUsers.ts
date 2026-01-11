@@ -1,5 +1,5 @@
 import useSWR from 'swr';
-import { dataFetcher } from '@/app/lib/axiosFetcher';
+import { dataFetcher } from '@/lib/axiosFetcher';
 import { useCallback, useMemo } from 'react';
 
 interface User {

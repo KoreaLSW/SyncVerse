@@ -11,6 +11,7 @@ export interface AuthUser {
     email?: string; // 구글 로그인 시
     name?: string; // 구글 로그인 시
     username?: string; // 🚀 구글 로그인 시 username
+    nickname?: string; // 🚀 구글 로그인 시 nickname
 
     headColor?: CharacterAppearance['headColor'];
     bodyColor?: CharacterAppearance['bodyColor'];

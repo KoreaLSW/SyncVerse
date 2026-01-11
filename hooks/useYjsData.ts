@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
-import { getPlayersMap } from '@/app/lib/playerUtils';
-import type { PlayerData } from '@/app/lib/types';
+import { getPlayersMap } from '@/lib/playerUtils';
+import type { PlayerData } from '@/lib/types';
 
 export function useYjsData(ydoc: Y.Doc | null) {
     const [playersMap, setPlayersMap] = useState<Y.Map<PlayerData> | null>(

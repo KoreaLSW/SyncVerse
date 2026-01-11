@@ -153,14 +153,17 @@ CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     room_id UUID NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
     sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sender_name VARCHAR(255),
     content TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
 );
 
 COMMENT ON TABLE messages IS '실제 채팅 메시지 저장 테이블';
+COMMENT ON COLUMN messages.sender_name IS '메시지 전송 당시의 작성자 이름';
 COMMENT ON COLUMN messages.content IS '메시지 내용';
 COMMENT ON COLUMN messages.room_id IS '메시지가 전송된 방 ID';
 
 -- 인덱스
 CREATE INDEX idx_messages_created_at ON messages(created_at);
 CREATE INDEX idx_messages_room_id ON messages(room_id);
+

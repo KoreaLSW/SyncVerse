@@ -4,14 +4,14 @@ import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import useSWRMutation from 'swr/mutation';
-import type { CharacterAppearance } from '@/app/lib/types';
+import type { CharacterAppearance } from '@/lib/types';
 import {
     getCharacterImagePath,
     getSpriteBackgroundPosition,
-} from '@/app/lib/playerUtils';
-import { useAuthStore } from '@/app/stores/authStore';
-import { apiClient } from '../lib/api';
-import { updateUserAppearance } from '../lib/userUtils';
+} from '@/lib/playerUtils';
+import { useAuthStore } from '@/stores/authStore';
+import { apiClient } from '../../lib/api';
+import { updateUserAppearance } from '../../lib/userUtils';
 
 const COLORS: CharacterAppearance['headColor'][] = [
     'amber',

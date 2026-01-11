@@ -2,19 +2,26 @@
 'use client';
 
 import { useEffect, useState, useRef, useMemo } from 'react';
-import { useYjs } from '@/app/hooks/useYjs';
-import { usePlayerPosition } from '@/app/hooks/usePlayerPosition';
+import { useRouter } from 'next/navigation'; // 🚀 useRouter 추가
+import { useYjs } from '@/hooks/useYjs';
+import { usePlayerPosition } from '@/hooks/usePlayerPosition';
 import {
     useKeyboardMovement,
     type Boundary,
-} from '@/app/hooks/useKeyboardMovement';
+} from '@/hooks/useKeyboardMovement';
 import { Character } from './Character';
 import { useUsers } from '../hooks/useUsers';
 import { Player } from '../lib/types';
-import { savePlayerPosition } from '@/app/lib/userUtils';
+import { savePlayerPosition } from '@/lib/userUtils';
 import { useAuthStore } from '../stores/authStore';
 import { CharacterSetupButton } from './CharacterSetupButton';
 import { LoginButton } from './LoginButton';
+import { ChatLog } from './ChatLog';
+import { MapObject } from './MapObject'; // 🚀 추가
+import { useChat } from '../hooks/useChat';
+import { apiClient } from '../lib/api'; // 🚀 추가
+import { useLocationTrigger } from '../hooks/useLocationTrigger';
+import { TRIGGER_ZONES } from '@/lib/mapConfig';
 
 interface MapCanvasProps {
     docName?: string;
@@ -30,6 +37,7 @@ type PlayerMetadata = {
     bodyColor: string;
     email?: string;
     nickname?: string;
+    message?: string; // 🚀 메시지 추가
 };
 
 // 🚀 고정된 맵 크기 설정
@@ -40,9 +48,17 @@ export function MapCanvas({
     docName = 'main-map',
     className = '',
 }: MapCanvasProps) {
+    const router = useRouter(); // 🚀 router 초기화
     const { user } = useAuthStore();
     const yjsState = useYjs(docName);
     const { getNickname } = useUsers();
+
+    // 🚀 메인 광장 Room ID 관리 (실제 구현 시에는 API를 통해 'MAIN' 카테고리 방 ID를 가져와야 함)
+    // 지금은 임시로 고정 ID를 사용하거나, 추후 방 정보를 가져오는 로직을 추가할 수 있습니다.
+    const [mainRoomId, setMainRoomId] = useState<string>('');
+
+    // 🚀 채팅 훅 연결
+    const { sendMessage: saveMessageToDB } = useChat(mainRoomId);
 
     const viewportRef = useRef<HTMLDivElement>(null);
     const worldRef = useRef<HTMLDivElement>(null);
@@ -71,6 +87,29 @@ export function MapCanvas({
             enabled: !!yjsState,
         });
 
+    // 🚀 위치 감지 시작 (외부 설정 사용)
+    const activeZoneId = useLocationTrigger(
+        myPlayer?.x || 0,
+        myPlayer?.y || 0,
+        TRIGGER_ZONES
+    );
+
+    // 🚀 Space 키 입력 시 페이지 이동 처리
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space' && activeZoneId) {
+                e.preventDefault(); // 스크롤 방지
+                const zone = TRIGGER_ZONES.find((z) => z.id === activeZoneId);
+                if (zone && zone.pagePath) {
+                    router.push(zone.pagePath);
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeZoneId, router]);
+
     // 🚀 키보드 이동 처리
     useKeyboardMovement({
         enabled: !!yjsState && !!myPlayer,
@@ -79,6 +118,23 @@ export function MapCanvas({
         onMove: updateMyPosition,
         onStop: stopMyMotion,
     });
+
+    // 🚀 초기 로드 시 메인 광장 ID 가져오기
+    useEffect(() => {
+        const fetchMainRoom = async () => {
+            try {
+                const res = await apiClient.get(
+                    '/api/chat/rooms?category=MAIN'
+                );
+                if (res.data.data) {
+                    setMainRoomId(res.data.data.id);
+                }
+            } catch (err) {
+                console.error('Failed to fetch main room:', err);
+            }
+        };
+        fetchMainRoom();
+    }, []);
 
     // 🚀 브라우저 종료 시 좌표 저장
     useEffect(() => {
@@ -151,6 +207,43 @@ export function MapCanvas({
         };
     }, [user?.username, user?.userId, playersMap]);
 
+    // 🚀 메시지 전송 함수
+    const handleSendMessage = async (content: string) => {
+        if (!playersMap || !userId || !content.trim()) return;
+
+        // 1. 실시간 말풍선 (Yjs) 업데이트
+        const myData = playersMap.get(userId);
+        if (myData) {
+            playersMap.set(userId, {
+                ...myData,
+                message: content.trim(),
+                messageTimestamp: Date.now(),
+            });
+
+            // 5초 후 메시지 자동 삭제
+            setTimeout(() => {
+                const currentData = playersMap.get(userId);
+                if (currentData?.message === content.trim()) {
+                    playersMap.set(userId, {
+                        ...currentData,
+                        message: '',
+                        messageTimestamp: 0,
+                    });
+                }
+            }, 5000);
+        }
+
+        // 2. DB에 메시지 저장 (API 호출)
+        if (user && mainRoomId) {
+            await saveMessageToDB({
+                room_id: mainRoomId,
+                sender_id: user.userId,
+                sender_name: user.name || '익명',
+                content: content.trim(),
+            });
+        }
+    };
+
     // 🚀 Yjs Map 직접 관찰: 메타데이터 변경 시에만 리렌더링 트리거
     useEffect(() => {
         if (!playersMap) return;
@@ -172,6 +265,7 @@ export function MapCanvas({
                     nickname: playerData.email
                         ? getNickname(playerData.email) || ''
                         : '',
+                    message: playerData.message || '', // 🚀 메시지 필드 추가
                 };
 
                 // 🚀 모든 필드를 엄격하게 비교
@@ -182,7 +276,8 @@ export function MapCanvas({
                     existing.headColor !== metadata.headColor ||
                     existing.bodyColor !== metadata.bodyColor ||
                     existing.email !== metadata.email ||
-                    existing.nickname !== metadata.nickname
+                    existing.nickname !== metadata.nickname ||
+                    existing.message !== metadata.message // 🚀 메시지 비교 추가
                 ) {
                     current.set(id, metadata);
                     hasMetadataChanged = true;
@@ -273,6 +368,18 @@ export function MapCanvas({
                         backgroundSize: '100px 100px',
                     }}
                 >
+                    {/* 🚀 맵 트리거 구역의 오브젝트 렌더링 */}
+                    {TRIGGER_ZONES.map((zone: any) => (
+                        <MapObject
+                            key={zone.id}
+                            x={zone.x}
+                            y={zone.y}
+                            width={zone.width}
+                            height={zone.height}
+                            imagePath={zone.imagePath}
+                        />
+                    ))}
+
                     {isConnected &&
                         stablePlayersMetadata.map((playerMeta) => {
                             const initialData = playersMap?.get(playerMeta.id);
@@ -299,6 +406,10 @@ export function MapCanvas({
                                     }
                                     isMe={playerMeta.id === userId}
                                     nickname={playerMeta.nickname}
+                                    isInZone={
+                                        playerMeta.id === userId &&
+                                        !!activeZoneId
+                                    }
                                 />
                             );
                         })}
@@ -317,6 +428,16 @@ export function MapCanvas({
                         플레이어: {stablePlayersMetadata.length}명
                     </div>
                 </div>
+
+                {/* 🚀 채팅 통합 컴포넌트 (왼쪽 하단 배치) */}
+                {isConnected && mainRoomId && (
+                    <div className='absolute w-140 bottom-6 left-4 z-40'>
+                        <ChatLog
+                            roomId={mainRoomId}
+                            onSendMessage={handleSendMessage}
+                        />
+                    </div>
+                )}
 
                 {/* 하단 컨트롤 영역 */}
                 <div className='absolute bottom-4 right-4 z-30 flex gap-2'>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import * as Y from 'yjs';
 import { HocuspocusProvider } from '@hocuspocus/provider';
-import { getOrCreateUserId } from '@/app/lib/playerUtils';
+import { getOrCreateUserId } from '@/lib/playerUtils';
 
 type UseYjsResult = {
     ydoc: Y.Doc;

@@ -1,5 +1,5 @@
 // app/api/users/route.ts
-import { supabase } from '@/app/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
 
 // GET /api/users - 사용자 목록

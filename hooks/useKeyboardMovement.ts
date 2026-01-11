@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import type { PlayerPosition, CharacterDirection } from '@/app/lib/types';
+import type { PlayerPosition, CharacterDirection } from '@/lib/types';
 
 // 이동 속도 설정 (픽셀/프레임)
 const MOVE_SPEED = 5;
@@ -148,12 +148,28 @@ export function useKeyboardMovement(options: UseKeyboardMovementOptions = {}) {
     useEffect(() => {
         if (!enabled) return;
 
+        // 🚀 포커스를 잃었을 때(alert 등) 모든 키 상태 초기화 함수
+        const handleBlur = () => {
+            keysRef.current = {
+                up: false,
+                down: false,
+                left: false,
+                right: false,
+            };
+            if (wasMovingRef.current) {
+                wasMovingRef.current = false;
+                onStop?.(lastDirectionRef.current);
+            }
+        };
+
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('blur', handleBlur); // 🚀 blur 이벤트 추가
 
         return () => {
             window.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('keyup', handleKeyUp);
+            window.removeEventListener('blur', handleBlur); // 🚀 정리
         };
     }, [enabled, handleKeyDown, handleKeyUp]);
 

@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signIn, useSession } from 'next-auth/react';
-import { useAuthStore } from '@/app/stores/authStore';
-import { apiClient } from '@/app/lib/api';
+import { useAuthStore } from '@/stores/authStore';
+import { apiClient } from '@/lib/api';
 
 export default function LoginPage() {
     const router = useRouter();
@@ -15,9 +15,9 @@ export default function LoginPage() {
     useEffect(() => {
         initialize();
 
-        // 🚀 구글 로그인 직후 스토어에 정보가 없다면 DB에서 정보를 가져와서 채워줌
-        if (session?.user && !user) {
-            const googleId = (session.user as any).id;
+        // 🚀 세션은 있는데 스토어 정보가 없거나 ID 형식이 잘못된 경우 갱신
+        if (session?.user && (!user || user.userId.startsWith('google_'))) {
+            const sessionUserId = (session.user as any).id;
             const username = (session.user as any).username;
 
             if (username) {
@@ -27,25 +27,31 @@ export default function LoginPage() {
                         const dbUser = res.data.data;
                         const avatarConfig = dbUser?.avatar_config || {};
 
+                        console.log('dbUser!!', dbUser);
                         login({
-                            userId: String(googleId),
+                            userId: dbUser.id, // ✅ 확실하게 DB의 UUID 사용
                             authType: 'google',
                             email: session.user?.email ?? undefined,
                             name: session.user?.name ?? undefined,
                             username: username,
+                            nickname: dbUser.nickname, // ✅ DB의 실제 닉네임 사용
                             headColor: avatarConfig.headColor,
                             bodyColor: avatarConfig.bodyColor,
                         });
                     })
                     .catch((err: any) => {
                         console.error('사용자 정보 로드 실패:', err);
-                        // 실패 시 최소 정보로 로그인 처리
+                        // 실패 시 세션에 담긴 정보라도 사용하여 로그인
                         login({
-                            userId: String(googleId),
+                            userId: sessionUserId,
                             authType: 'google',
                             email: session.user?.email ?? undefined,
                             name: session.user?.name ?? undefined,
                             username: username,
+                            nickname:
+                                (session.user as any).nickname ||
+                                session.user?.name ||
+                                '익명',
                         });
                     });
             }

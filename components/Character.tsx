@@ -2,29 +2,30 @@
 'use client';
 
 import { memo, useEffect, useState, useRef, forwardRef } from 'react';
-import type { Player } from '@/app/lib/types';
+import type { Player } from '@/lib/types';
 import {
     getCharacterImagePath,
     getSpriteBackgroundPosition,
-} from '@/app/lib/playerUtils';
+} from '@/lib/playerUtils';
 
 interface CharacterProps {
     player: Player;
     isMe?: boolean;
     size?: number;
     nickname?: string;
+    isInZone?: boolean; // 🚀 특정 구역 내부에 있는지 여부
 }
 
 export const Character = memo(
     forwardRef<HTMLDivElement, CharacterProps>(function Character(
-        { player, isMe = false, size = 64, nickname },
+        { player, isMe = false, size = 64, nickname, isInZone = false },
         ref
     ) {
         // 🚀 이제 이 로그는 좌표가 바뀔 때나 애니메이션 프레임이 바뀔 때도 찍히지 않습니다.
         // 오직 방향 전환, 이동 시작/정지, 색상 변경 시에만 딱 1번 찍힙니다.
-        console.log(
-            `[Character] Render ${isMe ? '(나)' : '(타인)'}: ${player.id}`
-        );
+        // console.log(
+        //     `[Character] Render ${isMe ? '(나)' : '(타인)'}: ${player.id}`
+        // );
 
         const { head, body } = getCharacterImagePath(
             player.headColor,
@@ -123,6 +124,27 @@ export const Character = memo(
 
                 {/* 닉네임 표시 */}
                 <div className='absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center gap-1'>
+                    {/* 🚀 구역 진입 시 스페이스바 표시 수정: Enter -> Space */}
+                    {isInZone && (
+                        <div className='mb-1 animate-bounce flex flex-col items-center group'>
+                            <div className='bg-yellow-400 w-24 text-black text-[12px] font-black px-1.5 py-0.5 rounded-sm shadow-md border border-yellow-600 flex items-center justify-center'>
+                                Space눌러 입장하기
+                            </div>
+                            <div className='w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-yellow-400' />
+                        </div>
+                    )}
+
+                    {/* 🚀 말풍선 추가 */}
+                    {player.message && (
+                        <div className='mb-1 relative z-50'>
+                            {/* z-index 추가하여 말풍선이 캐릭터보다 위에 오게 함 */}
+                            <div className='bg-white text-black text-sm px-3 py-1.5 rounded-2xl shadow-xl max-w-[200px] min-w-[40px] w-max break-words whitespace-pre-wrap text-center font-medium animate-in fade-in zoom-in duration-300'>
+                                {player.message}
+                            </div>
+                            {/* 말풍선 꼬리 */}
+                            <div className='absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white rotate-45' />
+                        </div>
+                    )}
                     {isMe && (
                         <div className='bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm'>
                             나
@@ -147,8 +169,10 @@ export const Character = memo(
             p.bodyColor === n.bodyColor &&
             p.userId === n.userId &&
             p.id === n.id &&
+            p.message === n.message && // 🚀 메시지 변경 감지 추가
             prevProps.isMe === nextProps.isMe &&
             prevProps.size === nextProps.size &&
+            prevProps.isInZone === nextProps.isInZone && // 🚀 구역 진입 상태 감지 추가
             (prevProps.nickname || '') === (nextProps.nickname || '') &&
             (p.email || '') === (n.email || '')
             // x, y는 비교하지 않음!

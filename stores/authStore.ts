@@ -2,8 +2,8 @@
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AuthUser } from '@/app/lib/auth';
-import { saveAuth, clearAuth, loginAsGuest } from '@/app/lib/auth';
+import type { AuthUser } from '@/lib/auth';
+import { saveAuth, clearAuth, loginAsGuest } from '@/lib/auth';
 
 interface AuthStore {
     user: AuthUser | null;
