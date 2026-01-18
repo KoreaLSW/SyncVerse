@@ -160,11 +160,15 @@ export function usePlayerPosition(options: UsePlayerPositionOptions) {
                 let initialY: number;
 
                 if (savedPosition) {
-                    // DB에 저장된 위치 사용
+                    // 1. DB에 저장된 위치 사용 (구글 사용자)
                     initialX = savedPosition.x;
                     initialY = savedPosition.y;
+                } else if (auth?.lastX != null && auth?.lastY != null) {
+                    // 2. LocalStorage에 저장된 위치 사용 (게스트 사용자)
+                    initialX = auth.lastX;
+                    initialY = auth.lastY;
                 } else {
-                    // 저장된 위치가 없으면 화면 중앙
+                    // 3. 저장된 위치가 없으면 화면 중앙
                     initialX = boundary
                         ? (boundary.minX + boundary.maxX) / 2
                         : typeof window !== 'undefined'

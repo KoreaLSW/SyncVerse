@@ -14,11 +14,12 @@ interface CharacterProps {
     size?: number;
     nickname?: string;
     isInZone?: boolean; // 🚀 특정 구역 내부에 있는지 여부
+    onLoad?: () => void; // 🚀 이미지 로딩 완료 콜백 추가
 }
 
 export const Character = memo(
     forwardRef<HTMLDivElement, CharacterProps>(function Character(
-        { player, isMe = false, size = 64, nickname, isInZone = false },
+        { player, isMe = false, size = 64, nickname, isInZone = false, onLoad },
         ref
     ) {
         // 🚀 이제 이 로그는 좌표가 바뀔 때나 애니메이션 프레임이 바뀔 때도 찍히지 않습니다.
@@ -82,6 +83,44 @@ export const Character = memo(
 
             return () => cancelAnimationFrame(animationFrameId);
         }, [isMoving, direction]); // 방향이 바뀌거나 이동 상태가 바뀔 때만 효과 재설정
+
+        // 🚀 내 캐릭터인 경우 이미지 로딩 감지
+        useEffect(() => {
+            if (!isMe || !onLoad) return;
+
+            const { head, body } = getCharacterImagePath(
+                player.headColor,
+                player.bodyColor
+            );
+
+            let headLoaded = false;
+            let bodyLoaded = false;
+
+            const checkLoaded = () => {
+                if (headLoaded && bodyLoaded) {
+                    onLoad();
+                }
+            };
+
+            const headImg = new Image();
+            headImg.src = head;
+            const bodyImg = new Image();
+            bodyImg.src = body;
+
+            const onImageLoad = () => {
+                if (headImg.complete) headLoaded = true;
+                if (bodyImg.complete) bodyLoaded = true;
+                checkLoaded();
+            };
+
+            headImg.onload = onImageLoad;
+            bodyImg.onload = onImageLoad;
+
+            // 이미 캐시되어 있는 경우 즉시 콜백 호출
+            if (headImg.complete && bodyImg.complete) {
+                onLoad();
+            }
+        }, [isMe, onLoad, player.headColor, player.bodyColor]);
 
         // 초기 배경 위치 계산
         const initialBgPos = getSpriteBackgroundPosition(direction, 0);
@@ -173,6 +212,7 @@ export const Character = memo(
             prevProps.isMe === nextProps.isMe &&
             prevProps.size === nextProps.size &&
             prevProps.isInZone === nextProps.isInZone && // 🚀 구역 진입 상태 감지 추가
+            prevProps.onLoad === nextProps.onLoad && // 🚀 onLoad 비교 추가
             (prevProps.nickname || '') === (nextProps.nickname || '') &&
             (p.email || '') === (n.email || '')
             // x, y는 비교하지 않음!

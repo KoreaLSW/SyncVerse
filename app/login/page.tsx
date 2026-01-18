@@ -57,7 +57,7 @@ export default function LoginPage() {
             }
         }
 
-        if (user) {
+        if (user && user.authType !== 'guest') {
             // 캐릭터 외형이 설정되어 있으면 메인으로, 없으면 캐릭터 설정으로
             const hasAppearance = !!(user.headColor && user.bodyColor);
             router.replace(hasAppearance ? '/' : '/character-setup');

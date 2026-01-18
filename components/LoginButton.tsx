@@ -2,12 +2,19 @@
 
 import { useAuthStore } from '../stores/authStore';
 import { clearAuth } from '../lib/auth';
-import { signOut } from 'next-auth/react';
+import { signOut, signIn } from 'next-auth/react';
 
 export function LoginButton() {
-    const { user } = useAuthStore();
+    const { user, logout } = useAuthStore();
 
     const handleAuthAction = async () => {
+        if (user?.authType === 'guest') {
+            // 🚀 게스트에서 구글 로그인으로 전환 시
+            logout();
+            await signIn('google', { callbackUrl: '/character-setup' });
+            return;
+        }
+
         // 1. 커스텀 인증 정보 삭제
         clearAuth();
         localStorage.removeItem('auth-storage');

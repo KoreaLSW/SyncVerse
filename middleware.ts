@@ -32,7 +32,9 @@ export async function middleware(request: NextRequest) {
     const hasAppearance = !!auth?.headColor && !!auth?.bodyColor;
 
     if (pathname === '/login') {
-        if (isAuthenticated) {
+        // 🚀 구글 로그인(nextAuthToken)이 되어있는 경우에만 자동 리다이렉트
+        // 게스트(auth)는 로그인 페이지 접근 허용
+        if (nextAuthToken) {
             return NextResponse.redirect(
                 new URL(hasAppearance ? '/' : '/character-setup', request.url)
             );

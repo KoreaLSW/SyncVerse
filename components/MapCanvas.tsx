@@ -1,7 +1,7 @@
 // MapCanvas.tsx
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation'; // 🚀 useRouter 추가
 import { useYjs } from '@/hooks/useYjs';
 import { usePlayerPosition } from '@/hooks/usePlayerPosition';
@@ -49,9 +49,17 @@ export function MapCanvas({
     className = '',
 }: MapCanvasProps) {
     const router = useRouter(); // 🚀 router 초기화
-    const { user } = useAuthStore();
+    const { user, updateUser } = useAuthStore();
     const yjsState = useYjs(docName);
     const { getNickname } = useUsers();
+
+    // 🚀 캐릭터 로딩 상태 관리
+    const [isCharacterLoaded, setIsCharacterLoaded] = useState(false);
+
+    // 🚀 캐릭터 로딩 완료 핸들러
+    const handleCharacterLoaded = useCallback(() => {
+        setIsCharacterLoaded(true);
+    }, []);
 
     // 🚀 메인 광장 Room ID 관리 (실제 구현 시에는 API를 통해 'MAIN' 카테고리 방 ID를 가져와야 함)
     // 지금은 임시로 고정 ID를 사용하거나, 추후 방 정보를 가져오는 로직을 추가할 수 있습니다.
@@ -138,25 +146,29 @@ export function MapCanvas({
 
     // 🚀 브라우저 종료 시 좌표 저장
     useEffect(() => {
-        // 게스트 사용자는 DB에 저장하지 않음 (username이 없음)
-        if (!user?.username || !playersMap) return;
+        if (!user || !playersMap) return;
 
         const handleBeforeUnload = () => {
             const myData = playersMap.get(user.userId);
             if (myData && myData.x != null && myData.y != null) {
-                // 🚀 중요: API 엔드포인트를 [username] 기반으로 수정
-                const url = `/api/users/${user.username}`;
-
-                // sendBeacon은 보통 POST를 권장하지만, Next.js PATCH 핸들러가
-                // 텍스트 데이터를 처리할 수 있도록 설정을 확인해야 합니다.
-                // 여기서는 안전하게 JSON 문자열로 변환하여 보냅니다.
-                const data = JSON.stringify({
-                    position_x: myData.x,
-                    position_y: myData.y,
-                });
-
-                const blob = new Blob([data], { type: 'application/json' });
-                navigator.sendBeacon(url, blob);
+                // 1. 구글 사용자: DB 저장
+                if (user.authType === 'google' && user.username) {
+                    const url = `/api/users/${user.username}`;
+                    const data = JSON.stringify({
+                        position_x: myData.x,
+                        position_y: myData.y,
+                    });
+                    const blob = new Blob([data], { type: 'application/json' });
+                    navigator.sendBeacon(url, blob);
+                }
+                // 2. 게스트 사용자: LocalStorage 저장 (authStore 업데이트)
+                else if (user.authType === 'guest') {
+                    // 스토어 정보를 직접 업데이트 (persist 미들웨어가 localStorage에 저장)
+                    useAuthStore.getState().updateUser({
+                        lastX: myData.x,
+                        lastY: myData.y,
+                    });
+                }
             }
         };
 
@@ -166,46 +178,34 @@ export function MapCanvas({
             if (document.hidden) {
                 const myData = playersMap.get(user.userId);
                 if (myData && myData.x != null && myData.y != null) {
-                    // 🚀 username 사용
-                    savePlayerPosition(user.username, myData.x, myData.y);
+                    if (user.authType === 'google' && user.username) {
+                        savePlayerPosition(user.username, myData.x, myData.y);
+                    } else if (user.authType === 'guest') {
+                        updateUser({
+                            lastX: myData.x,
+                            lastY: myData.y,
+                        });
+                    }
                 }
             }
         });
 
-        // // 주기적으로 좌표 저장 (5초마다)
-        // const saveInterval = setInterval(() => {
-        //     const myData = playersMap.get(user.userId);
-        //     if (myData && myData.x != null && myData.y != null) {
-        //         const currentPos = { x: myData.x, y: myData.y };
-        //         const lastPos = lastSavedPositionRef.current;
-
-        //         if (
-        //             !lastPos ||
-        //             Math.abs(lastPos.x - currentPos.x) > 10 ||
-        //             Math.abs(lastPos.y - currentPos.y) > 10
-        //         ) {
-        //             // 🚀 username 사용
-        //             savePlayerPosition(
-        //                 user.username,
-        //                 currentPos.x,
-        //                 currentPos.y
-        //             );
-        //             lastSavedPositionRef.current = currentPos;
-        //         }
-        //     }
-        // }, 5000);
-
         return () => {
             window.removeEventListener('beforeunload', handleBeforeUnload);
-            // clearInterval은 주석 처리된 코드에서만 필요하므로 제거
 
             const myData = playersMap.get(user.userId);
             if (myData && myData.x != null && myData.y != null) {
-                // 🚀 username 사용
-                savePlayerPosition(user.username, myData.x, myData.y);
+                if (user.authType === 'google' && user.username) {
+                    savePlayerPosition(user.username, myData.x, myData.y);
+                } else if (user.authType === 'guest') {
+                    updateUser({
+                        lastX: myData.x,
+                        lastY: myData.y,
+                    });
+                }
             }
         };
-    }, [user?.username, user?.userId, playersMap]);
+    }, [user, playersMap, updateUser]);
 
     // 🚀 메시지 전송 함수
     const handleSendMessage = async (content: string) => {
@@ -343,9 +343,23 @@ export function MapCanvas({
     }, [playersMap, userId]);
 
     const isConnected = !!yjsState;
+    const isLoading = !isConnected || !isCharacterLoaded;
 
     return (
         <div className={`relative w-full h-full overflow-hidden ${className}`}>
+            {/* 🚀 로딩 오버레이 */}
+            {isLoading && (
+                <div className='absolute inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900 text-white'>
+                    {/* 로딩 스피너 */}
+                    <div className='w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4' />
+                    <p className='text-lg font-medium animate-pulse'>
+                        {!isConnected
+                            ? '서버에 연결 중...'
+                            : '캐릭터 데이터를 불러오는 중...'}
+                    </p>
+                </div>
+            )}
+
             {/* 뷰포트: 화면에 보이는 영역 */}
             <div
                 ref={viewportRef}
@@ -409,6 +423,11 @@ export function MapCanvas({
                                     isInZone={
                                         playerMeta.id === userId &&
                                         !!activeZoneId
+                                    }
+                                    onLoad={
+                                        playerMeta.id === userId
+                                            ? handleCharacterLoaded
+                                            : undefined
                                     }
                                 />
                             );

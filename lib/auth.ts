@@ -15,6 +15,9 @@ export interface AuthUser {
 
     headColor?: CharacterAppearance['headColor'];
     bodyColor?: CharacterAppearance['bodyColor'];
+
+    lastX?: number; // 🚀 마지막 X 좌표 (게스트용)
+    lastY?: number; // 🚀 마지막 Y 좌표 (게스트용)
 }
 
 const AUTH_STORAGE_KEY = 'syncverse_auth';

@@ -131,13 +131,31 @@ export default function CharacterSetupPage() {
     );
 
     const onSave = () => {
-        if (!user || !user.username) {
+        if (!user) {
             router.replace('/login');
             return;
         }
 
-        // Mutation 실행
-        trigger({ headColor, bodyColor });
+        // 🚀 게스트 사용자는 DB 저장 없이 즉시 스토어 업데이트 후 이동
+        if (user.authType === 'guest') {
+            updateUser({
+                headColor,
+                bodyColor,
+            });
+            router.push('/');
+            return;
+        }
+
+        // 구글 로그인 사용자는 username이 필수
+        if (!user.username) {
+            router.replace('/login');
+            return;
+        }
+
+        // DB에 저장 (구글 로그인 사용자)
+        if (trigger) {
+            trigger({ headColor, bodyColor });
+        }
     };
 
     if (!user) {
