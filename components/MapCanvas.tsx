@@ -448,13 +448,40 @@ export function MapCanvas({
                     </div>
                 </div>
 
-                {/* 🚀 채팅 통합 컴포넌트 (왼쪽 하단 배치) */}
-                {isConnected && mainRoomId && (
-                    <div className='absolute w-140 bottom-6 left-4 z-40'>
-                        <ChatLog
-                            roomId={mainRoomId}
-                            onSendMessage={handleSendMessage}
-                        />
+                {/* 접속자/채팅 패널 (왼쪽 하단 세로 정렬) */}
+                {isConnected && (
+                    <div className='absolute bottom-6 left-4 z-40 w-140 flex flex-col gap-3'>
+                        {/* 현재 접속자 닉네임 목록 */}
+                        <div className='max-w-[400px] bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl overflow-hidden shadow-2xl text-white'>
+                            <div className='px-3 py-2 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0 h-9'>
+                                <span className='text-[10px] text-white/70 font-black uppercase tracking-widest'>
+                                    Online Users
+                                </span>
+                                <span className='text-[10px] text-white/50'>
+                                    {stablePlayersMetadata.length}명
+                                </span>
+                            </div>
+                            <ul className='h-[8.7rem] overflow-auto p-3 space-y-1 text-sm scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent'>
+                                {stablePlayersMetadata.map((playerMeta, index) => (
+                                    <li
+                                        key={`${playerMeta.id}-${index}`}
+                                        className='truncate text-white/90'
+                                    >
+                                        {playerMeta.nickname?.trim() || '익명'}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        {/* 🚀 채팅 통합 컴포넌트 */}
+                        {mainRoomId && (
+                            <div>
+                                <ChatLog
+                                    roomId={mainRoomId}
+                                    onSendMessage={handleSendMessage}
+                                />
+                            </div>
+                        )}
                     </div>
                 )}
 
