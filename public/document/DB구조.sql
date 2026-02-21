@@ -167,3 +167,43 @@ COMMENT ON COLUMN messages.room_id IS '메시지가 전송된 방 ID';
 CREATE INDEX idx_messages_created_at ON messages(created_at);
 CREATE INDEX idx_messages_room_id ON messages(room_id);
 
+
+
+-- ==========================================
+-- 10. 화이트보드 Yjs 문서 영구 저장 테이블
+-- ==========================================
+CREATE TABLE IF NOT EXISTS whiteboard_document (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    document_name VARCHAR(120) NOT NULL UNIQUE,
+    yjs_state BYTEA NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
+);
+
+COMMENT ON TABLE whiteboard_document IS '화이트보드 채널별 Yjs 문서 상태 저장';
+COMMENT ON COLUMN whiteboard_document.document_name IS 'Yjs 문서명 (예: whiteboard-channel-1)';
+COMMENT ON COLUMN whiteboard_document.yjs_state IS 'Y.encodeStateAsUpdate(document) 바이너리';
+COMMENT ON COLUMN whiteboard_document.created_at IS '최초 생성 시각';
+COMMENT ON COLUMN whiteboard_document.updated_at IS '마지막 업데이트 시각';
+
+-- 조회 성능 및 정렬 보조 인덱스
+CREATE INDEX IF NOT EXISTS idx_whiteboard_document_updated_at
+ON whiteboard_document(updated_at DESC);
+
+-- updated_at 자동 갱신 트리거 함수
+CREATE OR REPLACE FUNCTION set_whiteboard_document_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc', now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 트리거 재생성 안전 처리
+DROP TRIGGER IF EXISTS trg_whiteboard_document_updated_at
+ON whiteboard_document;
+
+CREATE TRIGGER trg_whiteboard_document_updated_at
+BEFORE UPDATE ON whiteboard_document
+FOR EACH ROW
+EXECUTE FUNCTION set_whiteboard_document_updated_at();

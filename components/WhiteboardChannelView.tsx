@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useUsers } from '@/hooks/useUsers';
 import { apiClient } from '@/lib/api';
@@ -40,6 +41,7 @@ const getSenderName = (
 export function WhiteboardChannelView({
     channelId,
 }: WhiteboardChannelViewProps) {
+    const router = useRouter();
     const { user, loginAsGuest } = useAuthStore();
     const { getNickname } = useUsers();
     const [roomId, setRoomId] = useState<string>('');
@@ -108,6 +110,19 @@ export function WhiteboardChannelView({
     return (
         <div className='relative w-full h-screen'>
             <WhiteboardCanvas channelId={channelId} />
+            <button
+                type='button'
+                onClick={() => {
+                    if (window.history.length > 1) {
+                        router.back();
+                        return;
+                    }
+                    router.push('/whiteboard');
+                }}
+                className='absolute top-4 left-4 z-50 rounded-lg border border-white/20 bg-black/60 px-3 py-2 text-sm text-white backdrop-blur-md transition hover:bg-black/80'
+            >
+                ← 채널 목록으로
+            </button>
 
             {!isRoomLoading && roomId && (
                 <div className='absolute bottom-6 left-4 z-50 w-140'>
