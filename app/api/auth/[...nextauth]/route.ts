@@ -4,6 +4,14 @@ import { supabase } from '@/lib/supabase';
 
 const handler = NextAuth({
     secret: process.env.NEXTAUTH_SECRET,
+    session: {
+        strategy: 'jwt',
+        maxAge: 7 * 24 * 60 * 60, // 7 days
+        updateAge: 24 * 60 * 60, // refresh daily
+    },
+    jwt: {
+        maxAge: 7 * 24 * 60 * 60,
+    },
 
     providers: [
         Google({
@@ -34,7 +42,7 @@ const handler = NextAuth({
                         },
                         {
                             onConflict: 'email', // email이 중복이면 업데이트
-                        }
+                        },
                     );
 
                     // 에러가 있으면 로그만 남기고 계속 진행 (이미 존재하는 사용자일 수 있음)

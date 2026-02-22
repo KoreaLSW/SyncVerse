@@ -4,10 +4,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useChat } from '@/hooks/useChat';
 import { ChatInput } from './ChatInput';
+import { useFriendsStore } from '@/stores/friendsStore';
 
 interface ChatLogProps {
     roomId: string;
     onSendMessage: (content: string) => void;
+    isCollapsed?: boolean;
+    onToggleCollapsed?: () => void;
 }
 
 // 🚀 닉네임별 고유 색상을 생성하는 함수
@@ -29,12 +32,26 @@ const getNicknameColor = (name: string) => {
     return colors[Math.abs(hash) % colors.length];
 };
 
-export function ChatLog({ roomId, onSendMessage }: ChatLogProps) {
+export function ChatLog({
+    roomId,
+    onSendMessage,
+    isCollapsed,
+    onToggleCollapsed,
+}: ChatLogProps) {
     const { messages, isLoading, isLoadingMore, isReachingEnd, loadMore } =
         useChat(roomId);
+    const friendsSet = useFriendsStore((state) => state.friendsSet);
     const scrollRef = useRef<HTMLDivElement>(null);
     const [isAtBottom, setIsAtBottom] = useState(true);
     const prevScrollHeightRef = useRef<number>(0);
+    const [isCollapsedInternal, setIsCollapsedInternal] = useState(false);
+    const collapsed = isCollapsed ?? isCollapsedInternal;
+    const handleToggleCollapsed =
+        onToggleCollapsed ?? (() => setIsCollapsedInternal((prev) => !prev));
+    const latestMessage = messages[messages.length - 1];
+    const latestPreview = latestMessage
+        ? `${latestMessage.sender_name}: ${latestMessage.content}`
+        : '아직 대화가 없습니다.';
 
     // 스크롤 이벤트 핸들러
     const handleScroll = () => {
@@ -88,9 +105,17 @@ export function ChatLog({ roomId, onSendMessage }: ChatLogProps) {
     if (isLoading && messages.length === 0) return null;
 
     return (
-        <div className='flex flex-col gap-2 w-full max-w-[400px] animate-in fade-in slide-in-from-left-4 duration-500'>
+        <div
+            className={`flex flex-col w-full max-w-[400px] animate-in fade-in slide-in-from-left-4 duration-500 ${
+                collapsed ? 'gap-1' : 'gap-2'
+            }`}
+        >
             {/* 채팅 로그 영역 */}
-            <div className='bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl h-60 flex flex-col overflow-hidden shadow-2xl'>
+            <div
+                className={`bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl flex flex-col overflow-hidden shadow-2xl ${
+                    collapsed ? 'h-16' : 'h-60'
+                }`}
+            >
                 <div className='px-3 py-2 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0 h-9'>
                     <span className='text-[10px] text-white/70 font-black uppercase tracking-widest'>
                         Live Chat
@@ -103,52 +128,77 @@ export function ChatLog({ roomId, onSendMessage }: ChatLogProps) {
                             </span>
                         )}
                         <span className='w-2 h-2 rounded-full bg-green-500 animate-pulse' />
+                        <button
+                            type='button'
+                            onClick={handleToggleCollapsed}
+                            className='text-[10px] text-white/60 hover:text-white/90 transition-colors'
+                        >
+                            {collapsed ? 'OFF' : 'ON'}
+                        </button>
                     </div>
                 </div>
 
-                <div
-                    ref={scrollRef}
-                    onScroll={handleScroll}
-                    className='flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent'
-                >
-                    {/* 로딩 인디케이터 (상단) */}
-                    {isLoadingMore && (
-                        <div className='text-center py-2'>
-                            <span className='text-[10px] text-white/30 animate-pulse'>
-                                이전 메시지 로딩 중...
-                            </span>
-                        </div>
-                    )}
-
-                    {messages.map((msg: any) => (
-                        <div
-                            key={msg.id}
-                            className='group flex flex-col gap-0.5'
-                        >
-                            <div className='flex items-baseline gap-2'>
-                                <span
-                                    className={`text-[13px] font-bold ${getNicknameColor(
-                                        msg.sender_name
-                                    )}`}
-                                >
-                                    {msg.sender_name}
-                                </span>
-                                <span className='text-[10px] text-white/30 group-hover:text-white/50 transition-colors'>
-                                    {formatTime(msg.created_at)}
+                {collapsed ? (
+                    <div className='px-3 py-2 text-xs text-white/80 truncate'>
+                        {latestPreview}
+                    </div>
+                ) : (
+                    <div
+                        ref={scrollRef}
+                        onScroll={handleScroll}
+                        className='flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent'
+                    >
+                        {/* 로딩 인디케이터 (상단) */}
+                        {isLoadingMore && (
+                            <div className='text-center py-2'>
+                                <span className='text-[10px] text-white/30 animate-pulse'>
+                                    이전 메시지 로딩 중...
                                 </span>
                             </div>
-                            <div className='text-[14px] text-white/90 leading-relaxed break-words bg-white/5 px-2 py-1 rounded-md border border-white/5 w-fit max-w-full'>
-                                {msg.content}
-                            </div>
-                        </div>
-                    ))}
+                        )}
 
-                    {messages.length === 0 && !isLoadingMore && (
-                        <div className='h-full flex flex-col items-center justify-center opacity-30'>
-                            <div className='text-xs'>아직 대화가 없습니다.</div>
-                        </div>
-                    )}
-                </div>
+                        {messages.map((msg: any) => {
+                            const isFriend =
+                                !!msg.sender_id &&
+                                friendsSet.has(msg.sender_id);
+                            return (
+                            <div
+                                key={msg.id}
+                                className='group flex flex-col gap-0.5'
+                            >
+                                <div className='flex items-baseline gap-2'>
+                                    <span
+                                        className={`text-[13px] font-bold ${getNicknameColor(
+                                            msg.sender_name
+                                        )}`}
+                                    >
+                                        {msg.sender_name}
+                                    </span>
+                                    {isFriend && (
+                                        <span className='text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/90 text-white'>
+                                            친구
+                                        </span>
+                                    )}
+                                    <span className='text-[10px] text-white/30 group-hover:text-white/50 transition-colors'>
+                                        {formatTime(msg.created_at)}
+                                    </span>
+                                </div>
+                                <div className='text-[14px] text-white/90 leading-relaxed break-words bg-white/5 px-2 py-1 rounded-md border border-white/5 w-fit max-w-full'>
+                                    {msg.content}
+                                </div>
+                            </div>
+                            );
+                        })}
+
+                        {messages.length === 0 && !isLoadingMore && (
+                            <div className='h-full flex flex-col items-center justify-center opacity-30'>
+                                <div className='text-xs'>
+                                    아직 대화가 없습니다.
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* 채팅 입력 영역 */}

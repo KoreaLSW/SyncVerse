@@ -6,6 +6,7 @@ export interface RemoteUser {
     color: string;
     name: string;
     tool: Tool;
+    userId?: string;
 }
 
 export interface DrawPath {

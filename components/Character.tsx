@@ -11,16 +11,27 @@ import {
 interface CharacterProps {
     player: Player;
     isMe?: boolean;
+    isFriend?: boolean;
     size?: number;
     nickname?: string;
     isInZone?: boolean; // 🚀 특정 구역 내부에 있는지 여부
     onLoad?: () => void; // 🚀 이미지 로딩 완료 콜백 추가
+    onContextMenu?: (event: React.MouseEvent<HTMLDivElement>) => void;
 }
 
 export const Character = memo(
     forwardRef<HTMLDivElement, CharacterProps>(function Character(
-        { player, isMe = false, size = 64, nickname, isInZone = false, onLoad },
-        ref
+        {
+            player,
+            isMe = false,
+            isFriend = false,
+            size = 64,
+            nickname,
+            isInZone = false,
+            onLoad,
+            onContextMenu,
+        },
+        ref,
     ) {
         // 🚀 이제 이 로그는 좌표가 바뀔 때나 애니메이션 프레임이 바뀔 때도 찍히지 않습니다.
         // 오직 방향 전환, 이동 시작/정지, 색상 변경 시에만 딱 1번 찍힙니다.
@@ -30,11 +41,12 @@ export const Character = memo(
 
         const { head, body } = getCharacterImagePath(
             player.headColor,
-            player.bodyColor
+            player.bodyColor,
         );
         const displayNickname = nickname || player.userId.slice(0, 8);
         const direction = player.direction || 'down';
         const isMoving = !!player.isMoving;
+        const [isHovering, setIsHovering] = useState(false);
 
         // 🚀 DOM 직접 조작을 위한 Ref들
         const headRef = useRef<HTMLDivElement>(null);
@@ -65,7 +77,7 @@ export const Character = memo(
                         (frameIndexRef.current + 1) % MAX_FRAMES;
                     const bgPos = getSpriteBackgroundPosition(
                         direction,
-                        frameIndexRef.current
+                        frameIndexRef.current,
                     );
 
                     if (headRef.current)
@@ -90,7 +102,7 @@ export const Character = memo(
 
             const { head, body } = getCharacterImagePath(
                 player.headColor,
-                player.bodyColor
+                player.bodyColor,
             );
 
             let headLoaded = false;
@@ -128,7 +140,10 @@ export const Character = memo(
         return (
             <div
                 ref={ref}
-                className={`absolute ${isMe ? 'z-10' : 'z-0'}`}
+                className={`absolute ${isMe ? 'z-10' : 'z-0'} cursor-pointer`}
+                onContextMenu={onContextMenu}
+                onMouseEnter={() => setIsHovering(true)}
+                onMouseLeave={() => setIsHovering(false)}
                 style={{
                     // 초기 위치만 설정 (부모의 RAF가 덮어씀)
                     transform: `translate3d(${player.x}px, ${player.y}px, 0) translate(-50%, -50%)`,
@@ -163,6 +178,11 @@ export const Character = memo(
 
                 {/* 닉네임 표시 */}
                 <div className='absolute -top-1 left-1/2 -translate-x-1/2 -translate-y-full flex flex-col items-center gap-1'>
+                    {isHovering && !isMe && (
+                        <div className='bg-black/80 text-white text-[10px] px-2 py-0.5 rounded-full border border-white/10 shadow-sm animate-bounce'>
+                            우클릭
+                        </div>
+                    )}
                     {/* 🚀 구역 진입 시 스페이스바 표시 수정: Enter -> Space */}
                     {isInZone && (
                         <div className='mb-1 animate-bounce flex flex-col items-center group'>
@@ -192,6 +212,11 @@ export const Character = memo(
                     <div className='bg-black/60 text-white text-xs px-2 py-0.5 rounded-full whitespace-nowrap backdrop-blur-sm border border-white/10'>
                         {displayNickname}
                     </div>
+                    {isFriend && !isMe && (
+                        <div className='bg-emerald-500/90 text-white text-[10px] px-1.5 py-0.5 rounded shadow-sm'>
+                            친구
+                        </div>
+                    )}
                 </div>
             </div>
         );
@@ -210,6 +235,7 @@ export const Character = memo(
             p.id === n.id &&
             p.message === n.message && // 🚀 메시지 변경 감지 추가
             prevProps.isMe === nextProps.isMe &&
+            prevProps.isFriend === nextProps.isFriend &&
             prevProps.size === nextProps.size &&
             prevProps.isInZone === nextProps.isInZone && // 🚀 구역 진입 상태 감지 추가
             prevProps.onLoad === nextProps.onLoad && // 🚀 onLoad 비교 추가
@@ -217,5 +243,5 @@ export const Character = memo(
             (p.email || '') === (n.email || '')
             // x, y는 비교하지 않음!
         );
-    }
+    },
 );

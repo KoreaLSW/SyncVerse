@@ -61,7 +61,9 @@ export function useWhiteboardSync(docName: string = 'whiteboard-room') {
         return true;
     };
 
-    type AwarenessUserPayload = Partial<Omit<RemoteUser, 'clientId' | 'name'>> & {
+    type AwarenessUserPayload = Partial<
+        Omit<RemoteUser, 'clientId' | 'name' | 'userId'>
+    > & {
         inProgress?: Omit<InProgressStroke, 'clientId'> | null;
     };
 
@@ -69,6 +71,7 @@ export function useWhiteboardSync(docName: string = 'whiteboard-room') {
         if (!yjsState?.awareness) return;
         yjsState.awareness.setLocalStateField('user', {
             name: displayNickname,
+            userId: user?.userId,
             ...yjsState.awareness.getLocalState()?.user,
             ...data
         });

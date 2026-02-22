@@ -17,11 +17,16 @@ import { useAuthStore } from '../stores/authStore';
 import { CharacterSetupButton } from './CharacterSetupButton';
 import { LoginButton } from './LoginButton';
 import { ChatLog } from './ChatLog';
+import { OnlineUsersPanel } from './OnlineUsersPanel';
+import { CharacterContextMenu } from './CharacterContextMenu';
 import { MapObject } from './MapObject'; // 🚀 추가
 import { useChat } from '../hooks/useChat';
+import { getFriendActionLabel } from '@/lib/friends';
 import { apiClient } from '../lib/api'; // 🚀 추가
+import { useFriendship } from '@/hooks/useFriendship';
 import { useLocationTrigger } from '../hooks/useLocationTrigger';
 import { TRIGGER_ZONES } from '@/lib/mapConfig';
+import { useFriendsStore } from '@/stores/friendsStore';
 
 interface MapCanvasProps {
     docName?: string;
@@ -52,6 +57,8 @@ export function MapCanvas({
     const { user, updateUser } = useAuthStore();
     const yjsState = useYjs(docName);
     const { getNickname } = useUsers();
+    const { init: initFriends, reset: resetFriends } = useFriendsStore();
+    const friendsSet = useFriendsStore((state) => state.friendsSet);
 
     // 🚀 캐릭터 로딩 상태 관리
     const [isCharacterLoaded, setIsCharacterLoaded] = useState(false);
@@ -99,7 +106,7 @@ export function MapCanvas({
     const activeZoneId = useLocationTrigger(
         myPlayer?.x || 0,
         myPlayer?.y || 0,
-        TRIGGER_ZONES
+        TRIGGER_ZONES,
     );
 
     // 🚀 Space 키 입력 시 페이지 이동 처리
@@ -127,12 +134,26 @@ export function MapCanvas({
         onStop: stopMyMotion,
     });
 
+    // 🚀 친구 목록 캐시 + 리얼타임 구독 초기화
+    useEffect(() => {
+        if (!user || user.authType === 'guest') {
+            resetFriends();
+            return;
+        }
+
+        initFriends(user.userId, false);
+
+        return () => {
+            resetFriends();
+        };
+    }, [user, initFriends, resetFriends]);
+
     // 🚀 초기 로드 시 메인 광장 ID 가져오기
     useEffect(() => {
         const fetchMainRoom = async () => {
             try {
                 const res = await apiClient.get(
-                    '/api/chat/rooms?category=MAIN'
+                    '/api/chat/rooms?category=MAIN',
                 );
                 if (res.data.data) {
                     setMainRoomId(res.data.data.id);
@@ -344,6 +365,23 @@ export function MapCanvas({
 
     const isConnected = !!yjsState;
     const isLoading = !isConnected || !isCharacterLoaded;
+    const {
+        contextMenu,
+        openContextMenu,
+        closeContextMenu,
+        handleFriendAction,
+    } = useFriendship(user);
+
+    const handleCharacterContextMenu = useCallback(
+        (
+            event: React.MouseEvent<HTMLDivElement>,
+            playerMeta: PlayerMetadata
+        ) => {
+            if (playerMeta.id === userId) return;
+            openContextMenu(event, playerMeta.id, playerMeta.nickname);
+        },
+        [userId, openContextMenu]
+    );
 
     return (
         <div className={`relative w-full h-full overflow-hidden ${className}`}>
@@ -365,6 +403,12 @@ export function MapCanvas({
                 ref={viewportRef}
                 className='relative w-full h-full bg-slate-900'
                 style={{ minHeight: '100vh' }}
+                data-viewport
+                onMouseDown={(event) => {
+                    if (event.button === 0) {
+                        closeContextMenu();
+                    }
+                }}
             >
                 {/* 월드: 실제 맵 데이터가 존재하는 넓은 공간 */}
                 <div
@@ -404,11 +448,11 @@ export function MapCanvas({
                                         if (el)
                                             playerElementRefs.current.set(
                                                 playerMeta.id,
-                                                el
+                                                el,
                                             );
                                         else
                                             playerElementRefs.current.delete(
-                                                playerMeta.id
+                                                playerMeta.id,
                                             );
                                     }}
                                     player={
@@ -419,6 +463,10 @@ export function MapCanvas({
                                         } as Player
                                     }
                                     isMe={playerMeta.id === userId}
+                                    isFriend={
+                                        playerMeta.id !== userId &&
+                                        friendsSet.has(playerMeta.id)
+                                    }
                                     nickname={playerMeta.nickname}
                                     isInZone={
                                         playerMeta.id === userId &&
@@ -429,10 +477,37 @@ export function MapCanvas({
                                             ? handleCharacterLoaded
                                             : undefined
                                     }
+                                    onContextMenu={(event) =>
+                                        handleCharacterContextMenu(
+                                            event,
+                                            playerMeta
+                                        )
+                                    }
                                 />
                             );
                         })}
                 </div>
+
+                {contextMenu && (
+                    <CharacterContextMenu
+                        x={contextMenu.x}
+                        y={contextMenu.y}
+                        nickname={contextMenu.nickname}
+                        friendActionLabel={getFriendActionLabel(
+                            contextMenu.friendStatus,
+                            contextMenu.isFriendStatusLoading,
+                            contextMenu.isTargetGuest
+                        )}
+                        friendActionDisabled={
+                            contextMenu.isFriendStatusLoading ||
+                            contextMenu.isTargetGuest ||
+                            contextMenu.friendStatus === 'UNAVAILABLE' ||
+                            contextMenu.friendStatus === 'ERROR'
+                        }
+                        onFriendAction={handleFriendAction}
+                        onClose={closeContextMenu}
+                    />
+                )}
 
                 {/* UI 요소들 (뷰포트 상단에 고정) */}
                 <div className='absolute top-4 left-4 z-20 flex gap-2'>
@@ -452,26 +527,9 @@ export function MapCanvas({
                 {isConnected && (
                     <div className='absolute bottom-6 left-4 z-40 w-140 flex flex-col gap-3'>
                         {/* 현재 접속자 닉네임 목록 */}
-                        <div className='max-w-[400px] bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl overflow-hidden shadow-2xl text-white'>
-                            <div className='px-3 py-2 bg-white/5 border-b border-white/10 flex justify-between items-center shrink-0 h-9'>
-                                <span className='text-[10px] text-white/70 font-black uppercase tracking-widest'>
-                                    Online Users
-                                </span>
-                                <span className='text-[10px] text-white/50'>
-                                    {stablePlayersMetadata.length}명
-                                </span>
-                            </div>
-                            <ul className='h-[8.7rem] overflow-auto p-3 space-y-1 text-sm scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent'>
-                                {stablePlayersMetadata.map((playerMeta, index) => (
-                                    <li
-                                        key={`${playerMeta.id}-${index}`}
-                                        className='truncate text-white/90'
-                                    >
-                                        {playerMeta.nickname?.trim() || '익명'}
-                                    </li>
-                                ))}
-                            </ul>
-                        </div>
+                        <OnlineUsersPanel
+                            users={stablePlayersMetadata}
+                        />
 
                         {/* 🚀 채팅 통합 컴포넌트 */}
                         {mainRoomId && (

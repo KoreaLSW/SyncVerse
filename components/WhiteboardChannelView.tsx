@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
+import { useFriendsStore } from '@/stores/friendsStore';
 import { useUsers } from '@/hooks/useUsers';
 import { apiClient } from '@/lib/api';
 import { WhiteboardCanvas } from '@/components/WhiteboardCanvas';
@@ -43,6 +44,7 @@ export function WhiteboardChannelView({
 }: WhiteboardChannelViewProps) {
     const router = useRouter();
     const { user, loginAsGuest } = useAuthStore();
+    const { init: initFriends, reset: resetFriends } = useFriendsStore();
     const { getNickname } = useUsers();
     const [roomId, setRoomId] = useState<string>('');
     const [isRoomLoading, setIsRoomLoading] = useState(true);
@@ -52,6 +54,19 @@ export function WhiteboardChannelView({
     useEffect(() => {
         if (!user) loginAsGuest();
     }, [user, loginAsGuest]);
+
+    useEffect(() => {
+        if (!user || user.authType === 'guest') {
+            resetFriends();
+            return;
+        }
+
+        initFriends(user.userId, false);
+
+        return () => {
+            resetFriends();
+        };
+    }, [user, initFriends, resetFriends]);
 
     useEffect(() => {
         let isActive = true;
