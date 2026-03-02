@@ -207,3 +207,91 @@ CREATE TRIGGER trg_whiteboard_document_updated_at
 BEFORE UPDATE ON whiteboard_document
 FOR EACH ROW
 EXECUTE FUNCTION set_whiteboard_document_updated_at();
+
+-- ==========================================
+-- 11. 알림 (Notifications)
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- 알림 수신자(누가 받는지)
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    -- 알림 행위자(누가 발생시켰는지): 시스템 알림 등은 NULL 가능
+    actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
+
+    -- 알림 타입 (확장 가능)
+    type VARCHAR(40) NOT NULL CHECK (
+        type IN (
+            'FRIEND_REQUEST',
+            'MESSAGE_REQUEST',
+            'SYSTEM',
+            'ETC'
+        )
+    ),
+
+    -- 표시용 텍스트
+    title VARCHAR(120) NOT NULL,
+    body TEXT,
+
+    -- 화면 전환/버튼 액션 등에 필요한 부가 데이터
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+
+    -- 중복 방지 키 (예: FRIENDSHIP:{friendship_id}, MSG_REQ:{request_id})
+    source_key VARCHAR(120) NOT NULL,
+
+    -- 상태
+    read_at TIMESTAMP WITH TIME ZONE,
+    acted_at TIMESTAMP WITH TIME ZONE,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+
+    UNIQUE (user_id, source_key)
+);
+
+COMMENT ON TABLE notifications IS '사용자 알림 통합 테이블';
+COMMENT ON COLUMN notifications.user_id IS '알림 수신자 ID';
+COMMENT ON COLUMN notifications.actor_id IS '알림 발생 주체 사용자 ID (시스템 알림은 NULL)';
+COMMENT ON COLUMN notifications.type IS '알림 타입 (친구요청, 메시지요청 등)';
+COMMENT ON COLUMN notifications.title IS '알림 제목';
+COMMENT ON COLUMN notifications.body IS '알림 본문';
+COMMENT ON COLUMN notifications.payload IS '화면 이동/행동 처리용 부가 데이터(JSONB)';
+COMMENT ON COLUMN notifications.source_key IS '도메인 이벤트 중복 방지 키';
+COMMENT ON COLUMN notifications.read_at IS '읽음 처리 시각';
+COMMENT ON COLUMN notifications.acted_at IS '수락/거절 등 액션 처리 시각';
+COMMENT ON COLUMN notifications.created_at IS '생성 시각';
+COMMENT ON COLUMN notifications.updated_at IS '수정 시각';
+
+-- 조회 성능 인덱스
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created_at
+ON notifications(user_id, created_at DESC);
+
+-- 미읽음 목록 조회 최적화
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+ON notifications(user_id, created_at DESC)
+WHERE read_at IS NULL;
+
+-- 타입별 필터링 최적화
+CREATE INDEX IF NOT EXISTS idx_notifications_user_type_created_at
+ON notifications(user_id, type, created_at DESC);
+
+-- updated_at 자동 갱신 함수/트리거
+CREATE OR REPLACE FUNCTION set_notifications_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc', now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_notifications_updated_at ON notifications;
+
+CREATE TRIGGER trg_notifications_updated_at
+BEFORE UPDATE ON notifications
+FOR EACH ROW
+EXECUTE FUNCTION set_notifications_updated_at();
+
+-- (선택) UPDATE/DELETE old row를 Realtime payload에 안정적으로 포함하려면 권장
+ALTER TABLE notifications REPLICA IDENTITY FULL;

@@ -14,4 +14,16 @@ export const TRIGGER_ZONES: Zone[] = [
         onEnter: () => {},
         onExit: () => console.log('분수대를 떠났습니다.'),
     },
+    {
+        id: 'message',
+        x: 1200,
+        y: 200,
+        width: 100,
+        height: 100,
+        label: '메시지',
+        imagePath: '/locations/message.png',
+        pagePath: '/message',
+        onEnter: () => {},
+        onExit: () => {},
+    },
 ];

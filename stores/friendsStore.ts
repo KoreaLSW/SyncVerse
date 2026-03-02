@@ -22,6 +22,7 @@ function clearRealtimeChannel() {
     }
 }
 
+// 친구 목록 관리 스토어
 export const useFriendsStore = create<FriendsStore>((set, get) => ({
     friendsSet: new Set(),
     isLoading: false,
@@ -43,6 +44,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
             set({ isLoading: false });
         }
 
+        // 실시간 친구 상태 변경 처리
         const handleRealtime = (payload: any) => {
             const row = payload.new ?? payload.old;
             if (!row) return;
@@ -63,6 +65,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
             }
         };
 
+        // Supabase Realtime 이벤트
         realtimeChannel = supabase
             .channel(`friendships:${userId}`)
             .on(
@@ -73,7 +76,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
                     table: 'friendships',
                     filter: `sender_id=eq.${userId}`,
                 },
-                handleRealtime
+                handleRealtime,
             )
             .on(
                 'postgres_changes',
@@ -83,7 +86,7 @@ export const useFriendsStore = create<FriendsStore>((set, get) => ({
                     table: 'friendships',
                     filter: `receiver_id=eq.${userId}`,
                 },
-                handleRealtime
+                handleRealtime,
             )
             .subscribe();
     },

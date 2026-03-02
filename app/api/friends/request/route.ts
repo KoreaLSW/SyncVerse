@@ -85,6 +85,48 @@ export async function POST(request: NextRequest) {
 
             if (acceptError) throw acceptError;
 
+            let accepterNickname =
+                authUser.nickname ?? authUser.username ?? '사용자';
+            if (!authUser.nickname) {
+                const { data: accepterUser } = await supabase
+                    .from('users')
+                    .select('nickname, username')
+                    .eq('id', authUser.userId)
+                    .maybeSingle();
+                accepterNickname =
+                    accepterUser?.nickname ??
+                    accepterUser?.username ??
+                    accepterNickname;
+            }
+
+            // 자동 수락 시에도 기존 요청자에게 수락 알림 전달
+            try {
+                const { error: notificationError } = await supabase
+                    .from('notifications')
+                    .insert({
+                        user_id: relation.sender_id,
+                        actor_id: authUser.userId,
+                        type: 'SYSTEM',
+                        title: '친구 요청 수락',
+                        body: `${accepterNickname}님이 친구요청을 수락했습니다.`,
+                        payload: {
+                            friendshipId: relation.id,
+                            accepterId: authUser.userId,
+                            accepterNickname,
+                            senderId: relation.sender_id,
+                        },
+                        source_key: `FRIEND_ACCEPTED:${relation.id}`,
+                    });
+                if (notificationError) {
+                    console.error(
+                        'Notification insert error:',
+                        notificationError,
+                    );
+                }
+            } catch (notificationError) {
+                console.error('Notification insert error:', notificationError);
+            }
+
             return NextResponse.json({
                 status: 'ACCEPTED',
                 data: accepted,
@@ -105,6 +147,44 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        let senderNickname = authUser.nickname ?? authUser.username ?? '사용자';
+        if (!authUser.nickname) {
+            const { data: senderUser } = await supabase
+                .from('users')
+                .select('nickname, username')
+                .eq('id', authUser.userId)
+                .maybeSingle();
+            senderNickname =
+                senderUser?.nickname ??
+                senderUser?.username ??
+                senderNickname;
+        }
+
+        // 알림 저장 실패가 친구 요청 자체를 막지 않도록 분리 처리
+        try {
+            const { error: notificationError } = await supabase
+                .from('notifications')
+                .insert({
+                    user_id: receiverId,
+                    actor_id: authUser.userId,
+                    type: 'FRIEND_REQUEST',
+                    title: '새 친구 요청',
+                    body: `${senderNickname}님이 친구 요청을 보냈습니다.`,
+                    payload: {
+                        friendshipId: data.id,
+                        senderId: authUser.userId,
+                        senderNickname,
+                        receiverId,
+                    },
+                    source_key: `FRIENDSHIP:${data.id}`,
+                });
+            if (notificationError) {
+                console.error('Notification insert error:', notificationError);
+            }
+        } catch (notificationError) {
+            console.error('Notification insert error:', notificationError);
+        }
 
         return NextResponse.json({ status: 'PENDING_SENT', data });
     } catch (error) {

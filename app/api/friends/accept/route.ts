@@ -46,6 +46,44 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        let accepterNickname = authUser.nickname ?? authUser.username ?? '사용자';
+        if (!authUser.nickname) {
+            const { data: accepterUser } = await supabase
+                .from('users')
+                .select('nickname, username')
+                .eq('id', authUser.userId)
+                .maybeSingle();
+            accepterNickname =
+                accepterUser?.nickname ??
+                accepterUser?.username ??
+                accepterNickname;
+        }
+
+        // 알림 저장 실패가 수락 자체를 막지 않도록 분리 처리
+        try {
+            const { error: notificationError } = await supabase
+                .from('notifications')
+                .insert({
+                    user_id: senderId,
+                    actor_id: authUser.userId,
+                    type: 'SYSTEM',
+                    title: '친구 요청 수락',
+                    body: `${accepterNickname}님이 친구요청을 수락했습니다.`,
+                    payload: {
+                        friendshipId: data.id,
+                        accepterId: authUser.userId,
+                        accepterNickname,
+                        senderId,
+                    },
+                    source_key: `FRIEND_ACCEPTED:${data.id}`,
+                });
+            if (notificationError) {
+                console.error('Notification insert error:', notificationError);
+            }
+        } catch (notificationError) {
+            console.error('Notification insert error:', notificationError);
+        }
+
         return NextResponse.json({ status: 'ACCEPTED', data });
     } catch (error) {
         console.error('Friend accept error:', error);

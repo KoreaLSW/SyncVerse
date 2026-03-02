@@ -5,10 +5,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/authStore';
 import { useFriendsStore } from '@/stores/friendsStore';
+import { useNotificationsStore } from '@/stores/notificationsStore';
 import { useUsers } from '@/hooks/useUsers';
 import { apiClient } from '@/lib/api';
 import { WhiteboardCanvas } from '@/components/WhiteboardCanvas';
 import { ChatLog } from '@/components/ChatLog';
+import { NotificationPanel } from '@/components/NotificationPanel';
 import { MAX_USERS_PER_CHANNEL } from '@/lib/whiteboardChannels';
 
 type WhiteboardChannelViewProps = {
@@ -45,6 +47,8 @@ export function WhiteboardChannelView({
     const router = useRouter();
     const { user, loginAsGuest } = useAuthStore();
     const { init: initFriends, reset: resetFriends } = useFriendsStore();
+    const { init: initNotifications, reset: resetNotifications } =
+        useNotificationsStore();
     const { getNickname } = useUsers();
     const [roomId, setRoomId] = useState<string>('');
     const [isRoomLoading, setIsRoomLoading] = useState(true);
@@ -67,6 +71,19 @@ export function WhiteboardChannelView({
             resetFriends();
         };
     }, [user, initFriends, resetFriends]);
+
+    useEffect(() => {
+        if (!user || user.authType === 'guest') {
+            resetNotifications();
+            return;
+        }
+
+        initNotifications(user.userId, false);
+
+        return () => {
+            resetNotifications();
+        };
+    }, [user, initNotifications, resetNotifications]);
 
     useEffect(() => {
         let isActive = true;
@@ -138,6 +155,9 @@ export function WhiteboardChannelView({
             >
                 ← 채널 목록으로
             </button>
+            <div className='absolute top-4 right-4 z-50'>
+                <NotificationPanel />
+            </div>
 
             {!isRoomLoading && roomId && (
                 <div className='absolute bottom-6 left-4 z-50 w-140'>

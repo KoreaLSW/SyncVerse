@@ -20,6 +20,7 @@ import { ChatLog } from './ChatLog';
 import { OnlineUsersPanel } from './OnlineUsersPanel';
 import { CharacterContextMenu } from './CharacterContextMenu';
 import { MapObject } from './MapObject'; // 🚀 추가
+import { NotificationPanel } from './NotificationPanel';
 import { useChat } from '../hooks/useChat';
 import { getFriendActionLabel } from '@/lib/friends';
 import { apiClient } from '../lib/api'; // 🚀 추가
@@ -27,6 +28,7 @@ import { useFriendship } from '@/hooks/useFriendship';
 import { useLocationTrigger } from '../hooks/useLocationTrigger';
 import { TRIGGER_ZONES } from '@/lib/mapConfig';
 import { useFriendsStore } from '@/stores/friendsStore';
+import { useNotificationsStore } from '@/stores/notificationsStore';
 
 interface MapCanvasProps {
     docName?: string;
@@ -59,6 +61,8 @@ export function MapCanvas({
     const { getNickname } = useUsers();
     const { init: initFriends, reset: resetFriends } = useFriendsStore();
     const friendsSet = useFriendsStore((state) => state.friendsSet);
+    const { init: initNotifications, reset: resetNotifications } =
+        useNotificationsStore();
 
     // 🚀 캐릭터 로딩 상태 관리
     const [isCharacterLoaded, setIsCharacterLoaded] = useState(false);
@@ -147,6 +151,20 @@ export function MapCanvas({
             resetFriends();
         };
     }, [user, initFriends, resetFriends]);
+
+    // 알림 목록 캐시 + 리얼타임 구독 초기화
+    useEffect(() => {
+        if (!user || user.authType === 'guest') {
+            resetNotifications();
+            return;
+        }
+
+        initNotifications(user.userId, false);
+
+        return () => {
+            resetNotifications();
+        };
+    }, [user, initNotifications, resetNotifications]);
 
     // 🚀 초기 로드 시 메인 광장 ID 가져오기
     useEffect(() => {
@@ -372,15 +390,16 @@ export function MapCanvas({
         handleFriendAction,
     } = useFriendship(user);
 
+    // 🚀 캐릭터 우클릭 시 컨텍스트 메뉴 표시
     const handleCharacterContextMenu = useCallback(
         (
             event: React.MouseEvent<HTMLDivElement>,
-            playerMeta: PlayerMetadata
+            playerMeta: PlayerMetadata,
         ) => {
             if (playerMeta.id === userId) return;
             openContextMenu(event, playerMeta.id, playerMeta.nickname);
         },
-        [userId, openContextMenu]
+        [userId, openContextMenu],
     );
 
     return (
@@ -480,7 +499,7 @@ export function MapCanvas({
                                     onContextMenu={(event) =>
                                         handleCharacterContextMenu(
                                             event,
-                                            playerMeta
+                                            playerMeta,
                                         )
                                     }
                                 />
@@ -496,7 +515,7 @@ export function MapCanvas({
                         friendActionLabel={getFriendActionLabel(
                             contextMenu.friendStatus,
                             contextMenu.isFriendStatusLoading,
-                            contextMenu.isTargetGuest
+                            contextMenu.isTargetGuest,
                         )}
                         friendActionDisabled={
                             contextMenu.isFriendStatusLoading ||
@@ -527,9 +546,7 @@ export function MapCanvas({
                 {isConnected && (
                     <div className='absolute bottom-6 left-4 z-40 w-140 flex flex-col gap-3'>
                         {/* 현재 접속자 닉네임 목록 */}
-                        <OnlineUsersPanel
-                            users={stablePlayersMetadata}
-                        />
+                        <OnlineUsersPanel users={stablePlayersMetadata} />
 
                         {/* 🚀 채팅 통합 컴포넌트 */}
                         {mainRoomId && (
@@ -547,6 +564,11 @@ export function MapCanvas({
                 <div className='absolute bottom-4 right-4 z-30 flex gap-2'>
                     <LoginButton />
                     <CharacterSetupButton />
+                </div>
+
+                {/* 우측 상단 알림 패널 */}
+                <div className='absolute top-4 right-4 z-50'>
+                    <NotificationPanel />
                 </div>
             </div>
         </div>

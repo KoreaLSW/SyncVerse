@@ -125,6 +125,7 @@ export function useFriendship(user: AuthUser | null) {
                 prev ? { ...prev, isFriendStatusLoading: true } : prev,
             );
 
+            // 친구 요청
             if (currentStatus === 'NONE') {
                 const nextStatus = await requestFriend(targetId);
                 setContextMenu((prev) =>
@@ -136,10 +137,11 @@ export function useFriendship(user: AuthUser | null) {
                           }
                         : prev,
                 );
+                // 친구 요청 성공 시 친구 추가
                 if (nextStatus === 'ACCEPTED') addFriend(targetId);
                 return;
             }
-
+            // 친구 수락
             if (currentStatus === 'PENDING_RECEIVED') {
                 const nextStatus = await acceptFriend(targetId);
                 setContextMenu((prev) =>
@@ -154,7 +156,7 @@ export function useFriendship(user: AuthUser | null) {
                 if (nextStatus === 'ACCEPTED') addFriend(targetId);
                 return;
             }
-
+            // 친구 해제
             if (
                 currentStatus === 'ACCEPTED' ||
                 currentStatus === 'PENDING_SENT'
