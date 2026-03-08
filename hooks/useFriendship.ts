@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FriendStatus } from '@/lib/friends';
 import {
     acceptFriend,
@@ -8,6 +8,8 @@ import {
 } from '@/lib/friends';
 import type { AuthUser } from '@/lib/auth';
 import { useFriendsStore } from '@/stores/friendsStore';
+import useSWR from 'swr';
+import useSWRMutation from 'swr/mutation';
 
 type ContextMenuState = {
     x: number;
@@ -26,48 +28,136 @@ export function useFriendship(user: AuthUser | null) {
     const { addFriend, removeFriend: removeFriendFromStore } =
         useFriendsStore();
 
-    // 대상의 친구 상태를 조회하고 컨텍스트 메뉴에 반영한다.
-    const loadFriendStatus = useCallback(
-        async (targetId: string, isTargetGuest: boolean) => {
-            if (isTargetGuest || !user || user.authType === 'guest') {
-                setContextMenu((prev) =>
-                    prev
-                        ? {
-                              ...prev,
-                              friendStatus: 'UNAVAILABLE',
-                              isFriendStatusLoading: false,
-                          }
-                        : prev,
-                );
-                return;
-            }
-
-            try {
-                const status = await getFriendStatus(targetId);
-                setContextMenu((prev) =>
-                    prev
-                        ? {
-                              ...prev,
-                              friendStatus: status,
-                              isFriendStatusLoading: false,
-                          }
-                        : prev,
-                );
-            } catch (error) {
-                console.error('친구 상태 조회 실패:', error);
-                setContextMenu((prev) =>
-                    prev
-                        ? {
-                              ...prev,
-                              friendStatus: 'ERROR',
-                              isFriendStatusLoading: false,
-                          }
-                        : prev,
-                );
-            }
-        },
-        [user],
+    const isAuthAvailable = !!user && user.authType !== 'guest';
+    const statusKey = useMemo(
+        () =>
+            contextMenu &&
+            contextMenu.playerId &&
+            !contextMenu.isTargetGuest &&
+            isAuthAvailable
+                ? (['friends-status', contextMenu.playerId] as const)
+                : null,
+        [contextMenu?.playerId, contextMenu?.isTargetGuest, isAuthAvailable],
     );
+
+    // 친구 상태 조회는 SWR 캐시를 사용한다.
+    const {
+        data: statusData,
+        error: statusError,
+        isLoading: isStatusLoading,
+        mutate: mutateStatus,
+    } = useSWR<FriendStatus>(
+        statusKey,
+        ([, targetId]) => getFriendStatus(String(targetId)),
+        {
+            revalidateOnFocus: false,
+            revalidateOnReconnect: true,
+            shouldRetryOnError: false,
+        },
+    );
+
+    // 친구 요청/수락/해제는 useSWRMutation으로 처리한다.
+    const { trigger: triggerRequest, isMutating: isRequestMutating } =
+        useSWRMutation(
+            '/api/friends/request',
+            async (
+                _key,
+                { arg }: { arg: { targetId: string } },
+            ): Promise<FriendStatus> => {
+                return requestFriend(arg.targetId);
+            },
+        );
+    const { trigger: triggerAccept, isMutating: isAcceptMutating } =
+        useSWRMutation(
+            '/api/friends/accept',
+            async (
+                _key,
+                { arg }: { arg: { targetId: string } },
+            ): Promise<FriendStatus> => {
+                return acceptFriend(arg.targetId);
+            },
+        );
+    const { trigger: triggerRemove, isMutating: isRemoveMutating } =
+        useSWRMutation(
+            '/api/friends/remove',
+            async (
+                _key,
+                { arg }: { arg: { targetId: string } },
+            ): Promise<FriendStatus> => {
+                return removeFriend(arg.targetId);
+            },
+        );
+
+    const isActionMutating =
+        isRequestMutating || isAcceptMutating || isRemoveMutating;
+
+    // SWR 조회 결과를 컨텍스트 메뉴 상태에 동기화한다.
+    useEffect(() => {
+        if (!contextMenu?.playerId) return;
+
+        if (contextMenu.isTargetGuest || !isAuthAvailable) {
+            setContextMenu((prev) =>
+                !prev
+                    ? prev
+                    : prev.friendStatus === 'UNAVAILABLE' &&
+                        !prev.isFriendStatusLoading
+                      ? prev
+                      : {
+                            ...prev,
+                            friendStatus: 'UNAVAILABLE',
+                            isFriendStatusLoading: false,
+                        },
+            );
+            return;
+        }
+
+        if (isStatusLoading) {
+            setContextMenu((prev) =>
+                !prev || prev.isFriendStatusLoading
+                    ? prev
+                    : { ...prev, isFriendStatusLoading: true },
+            );
+            return;
+        }
+
+        if (statusError) {
+            console.error('친구 상태 조회 실패:', statusError);
+            setContextMenu((prev) =>
+                !prev
+                    ? prev
+                    : prev.friendStatus === 'ERROR' &&
+                        !prev.isFriendStatusLoading
+                      ? prev
+                      : {
+                            ...prev,
+                            friendStatus: 'ERROR',
+                            isFriendStatusLoading: false,
+                        },
+            );
+            return;
+        }
+
+        setContextMenu((prev) =>
+            !prev
+                ? prev
+                : prev.friendStatus === (statusData ?? 'NONE') &&
+                    prev.isFriendStatusLoading === isActionMutating
+                  ? prev
+                  : {
+                        ...prev,
+                        friendStatus: statusData ?? 'NONE',
+                        isFriendStatusLoading: isActionMutating,
+                    },
+        );
+    }, [
+        contextMenu?.playerId,
+        contextMenu?.isTargetGuest,
+        isAuthAvailable,
+        isStatusLoading,
+        isActionMutating,
+        statusData,
+        statusError,
+    ]);
 
     // 우클릭 위치에 컨텍스트 메뉴를 열고 상태 조회를 시작한다.
     const openContextMenu = useCallback(
@@ -94,12 +184,11 @@ export function useFriendship(user: AuthUser | null) {
                 nickname,
                 isTargetGuest,
                 friendStatus: 'NONE',
-                isFriendStatusLoading: true,
+                isFriendStatusLoading:
+                    !isTargetGuest && !!user && user.authType !== 'guest',
             });
-
-            loadFriendStatus(playerId, isTargetGuest);
         },
-        [loadFriendStatus],
+        [user],
     );
 
     // 컨텍스트 메뉴를 닫는다.
@@ -110,7 +199,7 @@ export function useFriendship(user: AuthUser | null) {
     // 현재 상태에 따라 친구 요청/수락/해제를 처리한다.
     const handleFriendAction = useCallback(async () => {
         if (!contextMenu) return;
-        if (contextMenu.isFriendStatusLoading) return;
+        if (contextMenu.isFriendStatusLoading || isActionMutating) return;
 
         if (!user || user.authType === 'guest') {
             alert('구글 로그인 후 이용 가능합니다.');
@@ -127,7 +216,7 @@ export function useFriendship(user: AuthUser | null) {
 
             // 친구 요청
             if (currentStatus === 'NONE') {
-                const nextStatus = await requestFriend(targetId);
+                const nextStatus = await triggerRequest({ targetId });
                 setContextMenu((prev) =>
                     prev
                         ? {
@@ -137,13 +226,14 @@ export function useFriendship(user: AuthUser | null) {
                           }
                         : prev,
                 );
+                mutateStatus(nextStatus, { revalidate: false });
                 // 친구 요청 성공 시 친구 추가
                 if (nextStatus === 'ACCEPTED') addFriend(targetId);
                 return;
             }
             // 친구 수락
             if (currentStatus === 'PENDING_RECEIVED') {
-                const nextStatus = await acceptFriend(targetId);
+                const nextStatus = await triggerAccept({ targetId });
                 setContextMenu((prev) =>
                     prev
                         ? {
@@ -153,6 +243,7 @@ export function useFriendship(user: AuthUser | null) {
                           }
                         : prev,
                 );
+                mutateStatus(nextStatus, { revalidate: false });
                 if (nextStatus === 'ACCEPTED') addFriend(targetId);
                 return;
             }
@@ -161,7 +252,7 @@ export function useFriendship(user: AuthUser | null) {
                 currentStatus === 'ACCEPTED' ||
                 currentStatus === 'PENDING_SENT'
             ) {
-                const nextStatus = await removeFriend(targetId);
+                const nextStatus = await triggerRemove({ targetId });
                 setContextMenu((prev) =>
                     prev
                         ? {
@@ -171,6 +262,7 @@ export function useFriendship(user: AuthUser | null) {
                           }
                         : prev,
                 );
+                mutateStatus(nextStatus, { revalidate: false });
                 if (nextStatus === 'NONE') removeFriendFromStore(targetId);
                 return;
             }
@@ -191,7 +283,17 @@ export function useFriendship(user: AuthUser | null) {
                     : prev,
             );
         }
-    }, [contextMenu, user, addFriend, removeFriendFromStore]);
+    }, [
+        contextMenu,
+        user,
+        isActionMutating,
+        triggerRequest,
+        triggerAccept,
+        triggerRemove,
+        mutateStatus,
+        addFriend,
+        removeFriendFromStore,
+    ]);
 
     // 컨텍스트 메뉴 상태 및 친구 액션 핸들러를 반환한다.
     return {

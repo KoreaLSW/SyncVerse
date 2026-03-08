@@ -132,7 +132,7 @@ export function MapCanvas({
     // 🚀 키보드 이동 처리
     useKeyboardMovement({
         enabled: !!yjsState && !!myPlayer,
-        speed: 20,
+        speed: 10,
         boundary,
         onMove: updateMyPosition,
         onStop: stopMyMotion,

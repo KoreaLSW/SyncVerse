@@ -19,6 +19,18 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        const { searchParams } = new URL(request.url);
+        const hasPaginationParam =
+            searchParams.has('limit') || searchParams.has('offset');
+        const limitRaw = Number(searchParams.get('limit') ?? 10);
+        const offsetRaw = Number(searchParams.get('offset') ?? 0);
+        const limit = Number.isFinite(limitRaw)
+            ? Math.min(Math.max(limitRaw, 1), 50)
+            : 10;
+        const offset = Number.isFinite(offsetRaw)
+            ? Math.max(offsetRaw, 0)
+            : 0;
+
         const { data, error } = await supabase
             .from('friendships')
             .select('sender_id, receiver_id, status')
@@ -36,7 +48,45 @@ export async function GET(request: NextRequest) {
                     : row.sender_id
             ) ?? [];
 
-        return NextResponse.json({ data: friendIds });
+        const uniqueFriendIds = Array.from(new Set(friendIds));
+        if (uniqueFriendIds.length === 0) {
+            return NextResponse.json({
+                data: uniqueFriendIds,
+                friends: [],
+                hasMore: false,
+                nextOffset: offset,
+            });
+        }
+
+        const { data: friendUsers, error: friendUsersError } = await supabase
+            .from('users')
+            .select('id, username, nickname')
+            .in('id', uniqueFriendIds);
+
+        if (friendUsersError) throw friendUsersError;
+
+        const allFriends = (friendUsers ?? []).sort((a, b) =>
+            String(a.nickname ?? '').localeCompare(String(b.nickname ?? '')),
+        );
+        if (!hasPaginationParam) {
+            return NextResponse.json({
+                data: uniqueFriendIds,
+                friends: allFriends,
+                hasMore: false,
+                nextOffset: allFriends.length,
+            });
+        }
+
+        const pagedFriends = allFriends.slice(offset, offset + limit);
+        const nextOffset = offset + pagedFriends.length;
+        const hasMore = nextOffset < allFriends.length;
+
+        return NextResponse.json({
+            data: uniqueFriendIds,
+            friends: pagedFriends,
+            hasMore,
+            nextOffset,
+        });
     } catch (error) {
         console.error('Friend list error:', error);
         return NextResponse.json(

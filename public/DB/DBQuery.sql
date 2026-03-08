@@ -295,3 +295,126 @@ EXECUTE FUNCTION set_notifications_updated_at();
 
 -- (선택) UPDATE/DELETE old row를 Realtime payload에 안정적으로 포함하려면 권장
 ALTER TABLE notifications REPLICA IDENTITY FULL;
+
+
+-- ==========================================
+-- 12. 채팅 요청 (Chat Requests)
+-- DM/그룹 초대/그룹 가입요청 통합 관리
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS chat_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+
+    -- 요청 생성자 (요청을 보낸 사용자)
+    sender_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    -- 요청 수신자 (DM 상대 / 그룹 초대 대상 / 그룹 가입요청 처리자(방장/관리자))
+    receiver_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    -- 요청 유형
+    request_type VARCHAR(30) NOT NULL CHECK (
+        request_type IN (
+            'DM_INVITE',          -- 1:1 대화 요청
+            'GROUP_INVITE',       -- 그룹 채팅 초대
+            'GROUP_JOIN_REQUEST'  -- 그룹 채팅 가입 요청
+        )
+    ),
+
+    -- 요청 상태
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING' CHECK (
+        status IN (
+            'PENDING',
+            'ACCEPTED',
+            'REJECTED',
+            'CANCELED',
+            'EXPIRED'
+        )
+    ),
+
+    -- 그룹 관련 요청 시 대상 채팅방
+    target_room_id UUID REFERENCES chat_rooms(id) ON DELETE CASCADE,
+
+    -- 요청 메시지(선택)
+    request_message TEXT,
+
+    -- 수락 후 연결된 방 (DM 생성/기존 그룹 입장 승인 시 기록 가능)
+    resolved_room_id UUID REFERENCES chat_rooms(id) ON DELETE SET NULL,
+
+    -- 처리 시각(수락/거절/취소/만료)
+    responded_at TIMESTAMP WITH TIME ZONE,
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
+
+    -- 자기 자신에게 요청 금지
+    CONSTRAINT chk_chat_requests_not_self CHECK (sender_id <> receiver_id),
+
+    -- 요청 유형별 필수 필드 제약
+    -- DM: target_room_id 없어야 함
+    -- GROUP_INVITE / GROUP_JOIN_REQUEST: target_room_id 필수
+    CONSTRAINT chk_chat_requests_type_target CHECK (
+        (request_type = 'DM_INVITE' AND target_room_id IS NULL)
+        OR
+        (request_type IN ('GROUP_INVITE', 'GROUP_JOIN_REQUEST') AND target_room_id IS NOT NULL)
+    )
+);
+
+COMMENT ON TABLE chat_requests IS 'DM/그룹 채팅 요청 통합 관리 테이블';
+COMMENT ON COLUMN chat_requests.sender_id IS '요청을 보낸 사용자 ID';
+COMMENT ON COLUMN chat_requests.receiver_id IS '요청을 받은 사용자 ID';
+COMMENT ON COLUMN chat_requests.request_type IS '요청 유형 (DM_INVITE, GROUP_INVITE, GROUP_JOIN_REQUEST)';
+COMMENT ON COLUMN chat_requests.status IS '요청 상태 (PENDING/ACCEPTED/REJECTED/CANCELED/EXPIRED)';
+COMMENT ON COLUMN chat_requests.target_room_id IS '그룹 관련 요청의 대상 채팅방 ID';
+COMMENT ON COLUMN chat_requests.request_message IS '요청 메시지(선택)';
+COMMENT ON COLUMN chat_requests.resolved_room_id IS '요청 수락 후 연결된 채팅방 ID';
+COMMENT ON COLUMN chat_requests.responded_at IS '요청 처리 시각';
+COMMENT ON COLUMN chat_requests.created_at IS '요청 생성 시각';
+COMMENT ON COLUMN chat_requests.updated_at IS '요청 수정 시각';
+
+-- 조회 성능 인덱스
+CREATE INDEX IF NOT EXISTS idx_chat_requests_receiver_status_created_at
+ON chat_requests(receiver_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_requests_sender_status_created_at
+ON chat_requests(sender_id, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_requests_type_status_created_at
+ON chat_requests(request_type, status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_chat_requests_target_room_status_created_at
+ON chat_requests(target_room_id, status, created_at DESC);
+
+-- 중복 요청 방지 인덱스
+-- 1) DM 요청: 동일 사용자 쌍(방향 무관) PENDING 1건만 허용
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_requests_pending_dm_pair
+ON chat_requests (
+    LEAST(sender_id, receiver_id),
+    GREATEST(sender_id, receiver_id)
+)
+WHERE request_type = 'DM_INVITE' AND status = 'PENDING';
+
+-- 2) 그룹 초대: 동일 room + 동일 대상(receiver) PENDING 1건만 허용
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_requests_pending_group_invite
+ON chat_requests (target_room_id, receiver_id)
+WHERE request_type = 'GROUP_INVITE' AND status = 'PENDING';
+
+-- 3) 그룹 가입요청: 동일 room + 동일 요청자(sender) PENDING 1건만 허용
+CREATE UNIQUE INDEX IF NOT EXISTS uq_chat_requests_pending_group_join
+ON chat_requests (target_room_id, sender_id)
+WHERE request_type = 'GROUP_JOIN_REQUEST' AND status = 'PENDING';
+
+-- updated_at 자동 갱신 함수/트리거
+CREATE OR REPLACE FUNCTION set_chat_requests_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc', now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_chat_requests_updated_at ON chat_requests;
+
+CREATE TRIGGER trg_chat_requests_updated_at
+BEFORE UPDATE ON chat_requests
+FOR EACH ROW
+EXECUTE FUNCTION set_chat_requests_updated_at();

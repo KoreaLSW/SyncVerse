@@ -31,4 +31,12 @@ export type DmRequestItem = {
     target: string;
     status: RequestStatus;
     createdAt: string;
+    direction?: 'sent' | 'received';
+    canRespond?: boolean;
+};
+
+export type SearchUserItem = {
+    id: string;
+    username: string;
+    nickname: string;
 };
