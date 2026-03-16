@@ -13,6 +13,10 @@ export const apiClient = axios.create({
 // 요청 인터셉터
 apiClient.interceptors.request.use(
     (config) => {
+        // FormData는 브라우저가 boundary를 포함한 Content-Type을 자동으로 설정해야 합니다.
+        if (config.data instanceof FormData && config.headers) {
+            delete (config.headers as Record<string, string>)['Content-Type'];
+        }
         // 필요시 토큰 추가 등
         return config;
     },

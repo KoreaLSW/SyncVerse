@@ -14,6 +14,7 @@ export type ChatRequestItem = {
     targetUsername: string;
     status: ChatRequestStatus;
     createdAt: string;
+    resolvedRoomId?: string | null;
     direction: 'sent' | 'received';
     canRespond: boolean;
 };

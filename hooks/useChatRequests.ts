@@ -11,7 +11,7 @@ import {
     type ChatRequestItem,
     type ChatRequestStatus,
 } from '@/lib/message/chatRequests';
-import type { DmRequestItem } from '@/lib/message/types';
+import type { ChatRoomItem, DmRequestItem } from '@/lib/message/types';
 
 const STATUS_LABEL_MAP: Record<ChatRequestStatus, DmRequestItem['status']> = {
     PENDING: '요청중',
@@ -123,10 +123,30 @@ export function useChatRequests() {
         },
     );
 
-    const requests = useMemo(
-        () => (data?.flatMap((page) => page.requests) ?? []).map(toDmRequestItem),
+    const rawRequests = useMemo(
+        () => data?.flatMap((page) => page.requests) ?? [],
         [data],
     );
+
+    const requests = useMemo(() => rawRequests.map(toDmRequestItem), [rawRequests]);
+
+    const acceptedDmRooms = useMemo<ChatRoomItem[]>(() => {
+        const uniqueByRoomId = new Map<string, ChatRoomItem>();
+        for (const item of rawRequests) {
+            if (item.status !== 'ACCEPTED' || !item.resolvedRoomId) continue;
+            if (uniqueByRoomId.has(item.resolvedRoomId)) continue;
+            const roomName = item.targetNickname || item.targetUsername || '1:1 대화';
+            uniqueByRoomId.set(item.resolvedRoomId, {
+                id: item.resolvedRoomId,
+                name: roomName,
+                type: 'DM',
+                unreadCount: 0,
+                latestMessage: '대화가 시작되었습니다.',
+                latestAt: formatRelativeTime(item.createdAt),
+            });
+        }
+        return Array.from(uniqueByRoomId.values());
+    }, [rawRequests]);
 
     useEffect(() => {
         if (!user?.userId || user.authType === 'guest') return;
@@ -166,6 +186,7 @@ export function useChatRequests() {
 
     return {
         requests,
+        acceptedDmRooms,
         isLoading: !data && isValidating,
         errorMessage: error
             ? '요청 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.'

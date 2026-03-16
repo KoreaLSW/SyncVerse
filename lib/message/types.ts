@@ -22,8 +22,22 @@ export type MessageItem = {
     id: string;
     sender: string;
     content: string;
+    attachments?: MessageAttachmentItem[];
     createdAt: string;
     isMine?: boolean;
+    isReadByPeer?: boolean;
+};
+
+export type MessageAttachmentItem = {
+    id: string;
+    provider: 'CLOUDINARY';
+    resourceType: 'IMAGE' | 'VIDEO' | 'FILE';
+    publicId: string;
+    secureUrl: string;
+    format?: string | null;
+    width?: number | null;
+    height?: number | null;
+    bytes?: number | null;
 };
 
 export type DmRequestItem = {

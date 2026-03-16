@@ -418,3 +418,51 @@ CREATE TRIGGER trg_chat_requests_updated_at
 BEFORE UPDATE ON chat_requests
 FOR EACH ROW
 EXECUTE FUNCTION set_chat_requests_updated_at();
+
+
+-- ==========================================
+-- 13. 메시지 첨부파일 (Message Attachments)
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS message_attachments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+
+    -- 확장 대비: cloudinary 외 다른 저장소도 가능
+    provider VARCHAR(30) NOT NULL DEFAULT 'CLOUDINARY',
+
+    -- IMAGE/VIDEO/FILE 등 확장 가능
+    resource_type VARCHAR(20) NOT NULL DEFAULT 'IMAGE',
+
+    -- Cloudinary 식별자 (삭제/변환용 핵심 키)
+    public_id TEXT NOT NULL,
+
+    -- 렌더링용 URL (캐시)
+    secure_url TEXT NOT NULL,
+
+    -- 선택 메타데이터
+    format VARCHAR(20),
+    width INT,
+    height INT,
+    bytes INT,
+
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT timezone('utc', now()),
+
+    CONSTRAINT chk_message_attachments_provider
+        CHECK (provider IN ('CLOUDINARY')),
+
+    CONSTRAINT chk_message_attachments_resource_type
+        CHECK (resource_type IN ('IMAGE', 'VIDEO', 'FILE'))
+);
+
+-- 메시지 기준 조회 성능
+CREATE INDEX IF NOT EXISTS idx_message_attachments_message_id
+    ON message_attachments(message_id);
+
+-- Cloudinary public_id 중복 방지 (provider 포함)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_message_attachments_provider_public_id
+    ON message_attachments(provider, public_id);
+
+COMMENT ON TABLE message_attachments IS '메시지 첨부파일(이미지 등) 저장';
+COMMENT ON COLUMN message_attachments.public_id IS 'Cloudinary 리소스 식별자';
+COMMENT ON COLUMN message_attachments.secure_url IS '클라이언트 렌더링용 URL';

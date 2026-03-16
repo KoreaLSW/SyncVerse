@@ -38,7 +38,9 @@ export async function GET(request: NextRequest) {
 
         let query = supabase
             .from('chat_requests')
-            .select('id, sender_id, receiver_id, status, created_at')
+            .select(
+                'id, sender_id, receiver_id, status, created_at, resolved_room_id',
+            )
             .eq('request_type', 'DM_INVITE');
 
         if (scope === 'sent') {
@@ -101,6 +103,9 @@ export async function GET(request: NextRequest) {
                 targetUsername: targetUser?.username ?? '',
                 status: row.status as ChatRequestStatus,
                 createdAt: String(row.created_at),
+                resolvedRoomId: row.resolved_room_id
+                    ? String(row.resolved_room_id)
+                    : null,
                 direction,
                 canRespond:
                     direction === 'received' &&

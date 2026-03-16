@@ -55,6 +55,12 @@ export const useAuthStore = create<AuthStore>()(
                 const currentUser = get().user;
                 if (!currentUser) return;
 
+                const hasChanged = Object.entries(updates).some(
+                    ([key, value]) =>
+                        currentUser[key as keyof AuthUser] !== value,
+                );
+                if (!hasChanged) return;
+
                 const updatedUser: AuthUser = {
                     ...currentUser,
                     ...updates,

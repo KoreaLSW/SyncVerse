@@ -21,7 +21,6 @@ import { OnlineUsersPanel } from './OnlineUsersPanel';
 import { CharacterContextMenu } from './CharacterContextMenu';
 import { MapObject } from './MapObject'; // 🚀 추가
 import { NotificationPanel } from './NotificationPanel';
-import { useChat } from '../hooks/useChat';
 import { getFriendActionLabel } from '@/lib/friends';
 import { apiClient } from '../lib/api'; // 🚀 추가
 import { useFriendship } from '@/hooks/useFriendship';
@@ -75,9 +74,7 @@ export function MapCanvas({
     // 🚀 메인 광장 Room ID 관리 (실제 구현 시에는 API를 통해 'MAIN' 카테고리 방 ID를 가져와야 함)
     // 지금은 임시로 고정 ID를 사용하거나, 추후 방 정보를 가져오는 로직을 추가할 수 있습니다.
     const [mainRoomId, setMainRoomId] = useState<string>('');
-
-    // 🚀 채팅 훅 연결
-    const { sendMessage: saveMessageToDB } = useChat(mainRoomId);
+    const [isMainRoomJoined, setIsMainRoomJoined] = useState(false);
 
     const viewportRef = useRef<HTMLDivElement>(null);
     const worldRef = useRef<HTMLDivElement>(null);
@@ -183,9 +180,39 @@ export function MapCanvas({
         fetchMainRoom();
     }, []);
 
+    useEffect(() => {
+        let isActive = true;
+        const joinMainRoom = async () => {
+            if (!mainRoomId || !user?.userId || user.authType === 'guest') {
+                if (isActive) setIsMainRoomJoined(false);
+                return;
+            }
+            try {
+                await apiClient.post(`/api/chat/rooms/${mainRoomId}/join`);
+                if (isActive) setIsMainRoomJoined(true);
+            } catch (error) {
+                console.error('Failed to join main room:', error);
+                if (isActive) setIsMainRoomJoined(false);
+            }
+        };
+        joinMainRoom();
+        return () => {
+            isActive = false;
+        };
+    }, [mainRoomId, user?.authType, user?.userId]);
+
     // 🚀 브라우저 종료 시 좌표 저장
     useEffect(() => {
         if (!user || !playersMap) return;
+
+        const updateGuestLastPosition = (x: number, y: number) => {
+            if (user.authType !== 'guest') return;
+            if (user.lastX === x && user.lastY === y) return;
+            updateUser({
+                lastX: x,
+                lastY: y,
+            });
+        };
 
         const handleBeforeUnload = () => {
             const myData = playersMap.get(user.userId);
@@ -203,44 +230,37 @@ export function MapCanvas({
                 // 2. 게스트 사용자: LocalStorage 저장 (authStore 업데이트)
                 else if (user.authType === 'guest') {
                     // 스토어 정보를 직접 업데이트 (persist 미들웨어가 localStorage에 저장)
-                    useAuthStore.getState().updateUser({
-                        lastX: myData.x,
-                        lastY: myData.y,
-                    });
+                    updateGuestLastPosition(myData.x, myData.y);
                 }
             }
         };
 
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                const myData = playersMap.get(user.userId);
-                if (myData && myData.x != null && myData.y != null) {
-                    if (user.authType === 'google' && user.username) {
-                        savePlayerPosition(user.username, myData.x, myData.y);
-                    } else if (user.authType === 'guest') {
-                        updateUser({
-                            lastX: myData.x,
-                            lastY: myData.y,
-                        });
-                    }
-                }
-            }
-        });
-
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-
+        const handleVisibilityChange = () => {
+            if (!document.hidden) return;
             const myData = playersMap.get(user.userId);
             if (myData && myData.x != null && myData.y != null) {
                 if (user.authType === 'google' && user.username) {
                     savePlayerPosition(user.username, myData.x, myData.y);
                 } else if (user.authType === 'guest') {
-                    updateUser({
-                        lastX: myData.x,
-                        lastY: myData.y,
-                    });
+                    updateGuestLastPosition(myData.x, myData.y);
+                }
+            }
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            document.removeEventListener(
+                'visibilitychange',
+                handleVisibilityChange,
+            );
+
+            const myData = playersMap.get(user.userId);
+            if (myData && myData.x != null && myData.y != null) {
+                if (user.authType === 'google' && user.username) {
+                    savePlayerPosition(user.username, myData.x, myData.y);
                 }
             }
         };
@@ -274,7 +294,7 @@ export function MapCanvas({
 
         // 2. DB에 메시지 저장 (API 호출)
         if (user && mainRoomId) {
-            await saveMessageToDB({
+            await apiClient.post('/api/chat/messages', {
                 room_id: mainRoomId,
                 sender_id: user.userId,
                 sender_name: user.name || '익명',
@@ -549,12 +569,18 @@ export function MapCanvas({
                         <OnlineUsersPanel users={stablePlayersMetadata} />
 
                         {/* 🚀 채팅 통합 컴포넌트 */}
-                        {mainRoomId && (
+                        {mainRoomId && user?.authType !== 'guest' && (
                             <div>
                                 <ChatLog
-                                    roomId={mainRoomId}
+                                    roomId={isMainRoomJoined ? mainRoomId : ''}
                                     onSendMessage={handleSendMessage}
+                                    isJoining={!isMainRoomJoined}
                                 />
+                            </div>
+                        )}
+                        {mainRoomId && user?.authType === 'guest' && (
+                            <div className='w-full max-w-[400px] rounded-xl border border-white/10 bg-black/60 px-4 py-3 text-sm text-white/70'>
+                                로그인 후 채팅을 사용할 수 있습니다.
                             </div>
                         )}
                     </div>

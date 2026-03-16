@@ -52,6 +52,7 @@ export function WhiteboardChannelView({
     const { getNickname } = useUsers();
     const [roomId, setRoomId] = useState<string>('');
     const [isRoomLoading, setIsRoomLoading] = useState(true);
+    const [isRoomJoined, setIsRoomJoined] = useState(false);
 
     const roomName = useMemo(() => channelId, [channelId]);
 
@@ -125,6 +126,27 @@ export function WhiteboardChannelView({
         };
     }, [roomName]);
 
+    useEffect(() => {
+        let isActive = true;
+        const joinRoom = async () => {
+            if (!roomId || !user?.userId || user.authType === 'guest') {
+                if (isActive) setIsRoomJoined(false);
+                return;
+            }
+            try {
+                await apiClient.post(`/api/chat/rooms/${roomId}/join`);
+                if (isActive) setIsRoomJoined(true);
+            } catch (error) {
+                console.error('화이트보드 채팅방 참가 실패:', error);
+                if (isActive) setIsRoomJoined(false);
+            }
+        };
+        joinRoom();
+        return () => {
+            isActive = false;
+        };
+    }, [roomId, user?.authType, user?.userId]);
+
     const handleSendMessage = async (content: string) => {
         if (!roomId || !content.trim()) return;
 
@@ -159,7 +181,7 @@ export function WhiteboardChannelView({
                 <NotificationPanel />
             </div>
 
-            {!isRoomLoading && roomId && (
+            {!isRoomLoading && roomId && isRoomJoined && (
                 <div className='absolute bottom-6 left-4 z-50 w-140'>
                     <ChatLog
                         roomId={roomId}

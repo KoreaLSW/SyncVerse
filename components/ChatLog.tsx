@@ -11,6 +11,8 @@ interface ChatLogProps {
     onSendMessage: (content: string) => void;
     isCollapsed?: boolean;
     onToggleCollapsed?: () => void;
+    isJoining?: boolean;
+    joinMessage?: string;
 }
 
 // 🚀 닉네임별 고유 색상을 생성하는 함수
@@ -37,6 +39,8 @@ export function ChatLog({
     onSendMessage,
     isCollapsed,
     onToggleCollapsed,
+    isJoining,
+    joinMessage,
 }: ChatLogProps) {
     const { messages, isLoading, isLoadingMore, isReachingEnd, loadMore } =
         useChat(roomId);
@@ -102,7 +106,35 @@ export function ChatLog({
         });
     };
 
-    if (isLoading && messages.length === 0) return null;
+    if (isJoining) {
+        return (
+            <div className='flex flex-col w-full max-w-[400px] gap-2 animate-in fade-in slide-in-from-left-4 duration-500'>
+                <div className='bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl h-60 flex items-center justify-center shadow-2xl'>
+                    <span className='text-sm text-white/70 animate-pulse'>
+                        {joinMessage || '채팅방 입장 중...'}
+                    </span>
+                </div>
+                <div className='w-full shadow-lg'>
+                    <ChatInput onSendMessage={onSendMessage} />
+                </div>
+            </div>
+        );
+    }
+
+    if (isLoading && messages.length === 0) {
+        return (
+            <div className='flex flex-col w-full max-w-[400px] gap-2 animate-in fade-in slide-in-from-left-4 duration-500'>
+                <div className='bg-black/60 backdrop-blur-lg border border-white/10 rounded-xl h-60 flex items-center justify-center shadow-2xl'>
+                    <span className='text-sm text-white/70 animate-pulse'>
+                        채팅 내역 불러오는 중...
+                    </span>
+                </div>
+                <div className='w-full shadow-lg'>
+                    <ChatInput onSendMessage={onSendMessage} />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div
