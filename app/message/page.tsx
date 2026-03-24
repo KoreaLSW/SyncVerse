@@ -47,6 +47,16 @@ type PendingImage = {
     previewUrl: string;
 };
 
+type OpenDmResponse = {
+    success?: boolean;
+    roomId?: string | null;
+    peer?: {
+        id?: string;
+        nickname?: string | null;
+        username?: string | null;
+    } | null;
+};
+
 function formatLatestAt(isoTime: string) {
     const timestamp = new Date(isoTime).getTime();
     if (Number.isNaN(timestamp)) return '방금';
@@ -68,6 +78,7 @@ export default function MessagePage() {
     const [searchKeyword, setSearchKeyword] = useState('');
     const [draft, setDraft] = useState('');
     const [isLeavingRoom, setIsLeavingRoom] = useState(false);
+    const [isOpeningDm, setIsOpeningDm] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [isPreparingImage, setIsPreparingImage] = useState(false);
     const [selectedImages, setSelectedImages] = useState<PendingImage[]>([]);
@@ -105,8 +116,15 @@ export default function MessagePage() {
         requestDm,
     } = useChatRequests();
     const { rooms: myDmRooms, refresh: refreshMyDmRooms } = useMyDmRooms();
-    const { messages: dbMessages, sendMessage, uploadImageMessage } =
-        useChat(selectedRoomId);
+    const {
+        messages: dbMessages,
+        sendMessage,
+        uploadImageMessage,
+        isPeerTyping,
+        peerTypingName,
+        notifyTyping,
+        stopTyping,
+    } = useChat(selectedRoomId);
     const lastReadCallMsByRoomRef = useRef<Record<string, number>>({});
     const selectedImagesRef = useRef<PendingImage[]>([]);
     const READ_THROTTLE_MS = 700;
@@ -398,6 +416,7 @@ export default function MessagePage() {
             return;
         }
 
+        stopTyping();
         try {
             if (hasSelectedImage) {
                 setIsUploadingImage(true);
@@ -451,6 +470,75 @@ export default function MessagePage() {
                     ? '이미 진행 중인 1:1 요청이 있습니다.'
                     : '1:1 요청에 실패했습니다. 잠시 후 다시 시도해 주세요.';
             alert(message);
+        }
+    };
+
+    const handleDraftChange = useCallback(
+        (value: string) => {
+            setDraft(value);
+            if (!selectedRoomId || !user?.userId) return;
+            if (value.trim()) {
+                notifyTyping();
+                return;
+            }
+            stopTyping();
+        },
+        [notifyTyping, selectedRoomId, stopTyping, user?.userId],
+    );
+
+    const handleOpenDm = async (targetUser: {
+        id: string;
+        nickname?: string;
+        username?: string;
+    }) => {
+        if (!targetUser.id) return;
+        setIsOpeningDm(true);
+        try {
+            const response = await apiClient.post<OpenDmResponse>(
+                '/api/chat/rooms/dm/open',
+                {
+                    peerUserId: targetUser.id,
+                },
+            );
+            const roomId = String(response.data.roomId ?? '');
+            if (!response.data.success || !roomId) {
+                throw new Error('roomId missing');
+            }
+
+            const roomName =
+                response.data.peer?.nickname ||
+                response.data.peer?.username ||
+                targetUser.nickname ||
+                targetUser.username ||
+                '1:1 대화';
+
+            setRooms((prev) => {
+                if (prev.some((room) => room.id === roomId)) return prev;
+                return [
+                    {
+                        id: roomId,
+                        name: roomName,
+                        type: 'DM',
+                        unreadCount: 0,
+                        latestMessage: '대화가 시작되었습니다.',
+                        latestAt: '방금',
+                    },
+                    ...prev,
+                ];
+            });
+            setFilter('DM');
+            setSelectedRoomId(roomId);
+            await refreshMyDmRooms();
+        } catch (error: unknown) {
+            const status = (error as { response?: { status?: number } })?.response
+                ?.status;
+            const message =
+                status === 403
+                    ? '친구 상태에서만 바로 대화를 열 수 있습니다.'
+                    : '대화방 열기에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+            alert(message);
+        } finally {
+            setIsOpeningDm(false);
         }
     };
 
@@ -610,8 +698,11 @@ export default function MessagePage() {
                     selectedRoom={selectedRoom}
                     messages={currentMessages}
                     draft={draft}
-                    onDraftChange={setDraft}
+                    onDraftChange={handleDraftChange}
                     onSend={handleSend}
+                    isPeerTyping={isPeerTyping}
+                    peerTypingName={peerTypingName}
+                    onTypingStop={() => stopTyping()}
                     canSend={
                         !isPreparingImage && (!!draft.trim() || selectedImages.length > 0)
                     }
@@ -654,12 +745,14 @@ export default function MessagePage() {
                     onLoadMoreFriends={loadMoreFriends}
                     requests={requests}
                     isRequestingDm={isRequestingDm}
+                    isOpeningDm={isOpeningDm}
                     isRespondingDm={isRespondingDm}
                     isDeletingDm={isDeletingDm}
                     requestStatusErrorMessage={requestStatusErrorMessage}
                     statusClassName={statusClassName}
                     onSearchChange={setSearchKeyword}
                     onRequestDm={handleRequestDm}
+                    onOpenDm={handleOpenDm}
                     onRespondDm={handleRespondDm}
                     onDeleteDm={handleDeleteDm}
                 />

@@ -7,6 +7,9 @@ type MessageChatSectionProps = {
     draft: string;
     onDraftChange: (value: string) => void;
     onSend: () => void;
+    isPeerTyping?: boolean;
+    peerTypingName?: string;
+    onTypingStop?: () => void;
     canSend?: boolean;
     selectedImagePreviews?: Array<{ id: string; name: string; url: string }>;
     onSelectImages?: (files: File[]) => void;
@@ -24,6 +27,9 @@ export function MessageChatSection({
     draft,
     onDraftChange,
     onSend,
+    isPeerTyping,
+    peerTypingName,
+    onTypingStop,
     canSend,
     selectedImagePreviews,
     onSelectImages,
@@ -65,6 +71,7 @@ export function MessageChatSection({
 
     const handleSendWithAutoScroll = () => {
         if (!selectedRoom?.id || !canSend) return;
+        onTypingStop?.();
         shouldScrollToBottomRef.current = true;
         onSend();
         if (scrollContainerRef.current) {
@@ -186,6 +193,11 @@ export function MessageChatSection({
             </div>
 
             <div className='border-t border-white/10 p-3'>
+                {isPeerTyping ? (
+                    <div className='mb-2 text-xs text-cyan-200/90'>
+                        {peerTypingName || '상대방'}님이 입력 중...
+                    </div>
+                ) : null}
                 {selectedImagePreviews?.length ? (
                     <div className='mb-2 flex flex-wrap items-start gap-2'>
                         {selectedImagePreviews.map((preview) => (
@@ -258,7 +270,11 @@ export function MessageChatSection({
                 ) : null}
                 <input
                     value={draft}
-                    onChange={(event) => onDraftChange(event.target.value)}
+                    onChange={(event) => {
+                        const next = event.target.value;
+                        onDraftChange(next);
+                    }}
+                    onBlur={() => onTypingStop?.()}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter' && !event.shiftKey) {
                             event.preventDefault();

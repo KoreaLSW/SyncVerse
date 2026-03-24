@@ -20,12 +20,14 @@ type MessageRequestPanelProps = {
     onLoadMoreFriends?: () => void;
     requests: DmRequestItem[];
     isRequestingDm?: boolean;
+    isOpeningDm?: boolean;
     isRespondingDm?: boolean;
     isDeletingDm?: boolean;
     requestStatusErrorMessage?: string | null;
     statusClassName: (status: DmRequestItem['status']) => string;
     onSearchChange: (value: string) => void;
     onRequestDm?: (receiverId: string) => void;
+    onOpenDm?: (user: SearchUserItem) => void;
     onRespondDm?: (
         requestId: string,
         action: 'accept' | 'reject' | 'cancel',
@@ -50,12 +52,14 @@ export function MessageRequestPanel({
     onLoadMoreFriends,
     requests,
     isRequestingDm,
+    isOpeningDm,
     isRespondingDm,
     isDeletingDm,
     requestStatusErrorMessage,
     statusClassName,
     onSearchChange,
     onRequestDm,
+    onOpenDm,
     onRespondDm,
     onDeleteDm,
 }: MessageRequestPanelProps) {
@@ -71,8 +75,10 @@ export function MessageRequestPanel({
                 searchErrorMessage={searchErrorMessage}
                 onSearchChange={onSearchChange}
                 onRequestDm={onRequestDm}
+                onOpenDm={onOpenDm}
                 onLoadMoreSearchedUsers={onLoadMoreSearchedUsers}
                 isRequestingDm={isRequestingDm}
+                isOpeningDm={isOpeningDm}
                 friendIds={friendIds}
             />
             {/* 1:1 대화 요청 친구 섹션 */}
@@ -83,6 +89,8 @@ export function MessageRequestPanel({
                 hasMoreFriends={hasMoreFriends}
                 friendErrorMessage={friendErrorMessage}
                 onLoadMoreFriends={onLoadMoreFriends}
+                isOpeningDm={isOpeningDm}
+                onOpenDm={onOpenDm}
             />
             {/* 1:1 대화 요청 상태 섹션 */}
             <MessageRequestStatusSection

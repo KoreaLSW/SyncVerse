@@ -6,7 +6,9 @@ type MessageRequestFriendSectionProps = {
     isFriendLoadingMore?: boolean;
     hasMoreFriends?: boolean;
     friendErrorMessage?: string | null;
+    isOpeningDm?: boolean;
     onLoadMoreFriends?: () => void;
+    onOpenDm?: (user: SearchUserItem) => void;
 };
 
 export function MessageRequestFriendSection({
@@ -15,7 +17,9 @@ export function MessageRequestFriendSection({
     isFriendLoadingMore,
     hasMoreFriends,
     friendErrorMessage,
+    isOpeningDm,
     onLoadMoreFriends,
+    onOpenDm,
 }: MessageRequestFriendSectionProps) {
     return (
         <>
@@ -62,9 +66,11 @@ export function MessageRequestFriendSection({
                         </div>
                         <button
                             type='button'
+                            disabled={!!isOpeningDm}
+                            onClick={() => onOpenDm?.(user)}
                             className='rounded bg-emerald-500/90 px-2 py-1 text-xs font-semibold hover:bg-emerald-400'
                         >
-                            대화 열기
+                            {isOpeningDm ? '열리는 중...' : '대화 열기'}
                         </button>
                     </div>
                 ))}

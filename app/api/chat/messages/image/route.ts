@@ -22,7 +22,7 @@ async function uploadToCloudinary(file: File, roomId: string, senderId: string) 
     const safeRoomId = sanitizeSegment(roomId);
     const safeSenderId = sanitizeSegment(senderId);
     const randomSuffix = Math.random().toString(36).slice(2, 8);
-    const folder = `syncverse/chat/${safeRoomId}`;
+    const folder = `syncverse/DM/${safeRoomId}`;
     const publicId = `${safeSenderId}-${timestamp}-${randomSuffix}`;
     const signatureBase = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}${apiSecret}`;
     const signature = createHash('sha1').update(signatureBase).digest('hex');

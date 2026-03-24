@@ -1,9 +1,10 @@
 // app/hooks/useChat.ts
 import useSWRInfinite from 'swr/infinite'; // 🚀 변경
 import { apiClient } from '@/lib/api';
-import { useEffect, useMemo } from 'react'; // 🚀 useMemo 추가
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuthStore } from '@/stores/authStore';
 import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 
 type ChatMessageApiItem = {
     id: string;
@@ -31,7 +32,15 @@ function toChatMessageApiItem(raw: unknown): ChatMessageApiItem | null {
 }
 
 export function useChat(roomId: string) {
+    const user = useAuthStore((state) => state.user);
     const userId = useAuthStore((state) => state.user?.userId ?? '');
+    const typingName =
+        user?.nickname || user?.username || user?.name || '사용자';
+    const chatChannelRef = useRef<RealtimeChannel | null>(null);
+    const typingStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const peerTypingHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const [isPeerTyping, setIsPeerTyping] = useState(false);
+    const [peerTypingName, setPeerTypingName] = useState<string>('상대방');
     const PAGE_SIZE = 20;
 
     // SWRInfinite를 위한 키 생성 함수
@@ -97,6 +106,50 @@ export function useChat(roomId: string) {
     const isReachingEnd =
         isEmpty || (data && data[data.length - 1]?.length < PAGE_SIZE);
 
+    const stopTyping = useCallback(
+        (notify = true) => {
+            if (typingStopTimerRef.current) {
+                clearTimeout(typingStopTimerRef.current);
+                typingStopTimerRef.current = null;
+            }
+            if (!notify || !roomId || !userId || !chatChannelRef.current) return;
+            chatChannelRef.current.send({
+                type: 'broadcast',
+                event: 'typing',
+                payload: {
+                    roomId,
+                    userId,
+                    senderName: typingName,
+                    isTyping: false,
+                    at: Date.now(),
+                },
+            });
+        },
+        [roomId, userId, typingName],
+    );
+
+    const notifyTyping = useCallback(() => {
+        if (!roomId || !userId || !chatChannelRef.current) return;
+        chatChannelRef.current.send({
+            type: 'broadcast',
+            event: 'typing',
+            payload: {
+                roomId,
+                userId,
+                senderName: typingName,
+                isTyping: true,
+                at: Date.now(),
+            },
+        });
+
+        if (typingStopTimerRef.current) {
+            clearTimeout(typingStopTimerRef.current);
+        }
+        typingStopTimerRef.current = setTimeout(() => {
+            stopTyping();
+        }, 1600);
+    }, [roomId, userId, typingName, stopTyping]);
+
     // 🚀 실시간 메시지 구독 로직 추가
     useEffect(() => {
         if (!roomId) return;
@@ -146,12 +199,42 @@ export function useChat(roomId: string) {
                     );
                 },
             )
+            .on('broadcast', { event: 'typing' }, ({ payload }) => {
+                const senderId = String(payload?.userId ?? '');
+                if (!senderId || senderId === userId) return;
+                const senderName = String(payload?.senderName ?? '').trim();
+                const isTyping = !!payload?.isTyping;
+
+                if (peerTypingHideTimerRef.current) {
+                    clearTimeout(peerTypingHideTimerRef.current);
+                    peerTypingHideTimerRef.current = null;
+                }
+
+                if (!isTyping) {
+                    setIsPeerTyping(false);
+                    return;
+                }
+
+                setPeerTypingName(senderName || '상대방');
+                setIsPeerTyping(true);
+                peerTypingHideTimerRef.current = setTimeout(() => {
+                    setIsPeerTyping(false);
+                }, 2500);
+            })
             .subscribe();
+        chatChannelRef.current = channel;
 
         return () => {
+            stopTyping();
+            chatChannelRef.current = null;
+            if (peerTypingHideTimerRef.current) {
+                clearTimeout(peerTypingHideTimerRef.current);
+                peerTypingHideTimerRef.current = null;
+            }
+            setIsPeerTyping(false);
             supabase.removeChannel(channel);
         };
-    }, [roomId, mutate]);
+    }, [roomId, mutate, userId, stopTyping]);
 
     // 상대방의 last_read_at 변경을 실시간 반영하여 "읽음" 상태 업데이트
     useEffect(() => {
@@ -218,6 +301,10 @@ export function useChat(roomId: string) {
         isLoadingMore,
         isReachingEnd,
         loadMore: () => setSize(size + 1),
+        isPeerTyping,
+        peerTypingName,
+        notifyTyping,
+        stopTyping,
         sendMessage,
         uploadImageMessage,
         mutate,

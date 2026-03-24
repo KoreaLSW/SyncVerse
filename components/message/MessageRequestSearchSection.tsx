@@ -9,8 +9,10 @@ type MessageRequestSearchSectionProps = {
     searchErrorMessage?: string | null;
     friendIds?: string[];
     isRequestingDm?: boolean;
+    isOpeningDm?: boolean;
     onSearchChange: (value: string) => void;
     onRequestDm?: (receiverId: string) => void;
+    onOpenDm?: (user: SearchUserItem) => void;
     onLoadMoreSearchedUsers?: () => void;
 };
 
@@ -23,8 +25,10 @@ export function MessageRequestSearchSection({
     searchErrorMessage,
     friendIds,
     isRequestingDm,
+    isOpeningDm,
     onSearchChange,
     onRequestDm,
+    onOpenDm,
     onLoadMoreSearchedUsers,
 }: MessageRequestSearchSectionProps) {
     const friendIdSet = new Set(friendIds ?? []);
@@ -96,11 +100,23 @@ export function MessageRequestSearchSection({
                                 </div>
                                 <button
                                     type='button'
-                                    disabled={!!isRequestingDm}
-                                    onClick={() => onRequestDm?.(user.id)}
+                                    disabled={!!isRequestingDm || !!isOpeningDm}
+                                    onClick={() => {
+                                        if (friendIdSet.has(user.id)) {
+                                            onOpenDm?.(user);
+                                            return;
+                                        }
+                                        onRequestDm?.(user.id);
+                                    }}
                                     className='rounded bg-blue-500/90 px-2 py-1 text-xs font-semibold hover:bg-blue-400'
                                 >
-                                    1:1 요청
+                                    {friendIdSet.has(user.id)
+                                        ? isOpeningDm
+                                            ? '열리는 중...'
+                                            : '대화 열기'
+                                        : isRequestingDm
+                                          ? '요청 중...'
+                                          : '1:1 요청'}
                                 </button>
                             </div>
                         ))}
