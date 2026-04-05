@@ -199,6 +199,30 @@ export function useChat(roomId: string) {
                     );
                 },
             )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `room_id=eq.${roomId}`,
+                },
+                () => {
+                    mutate();
+                },
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'messages',
+                    filter: `room_id=eq.${roomId}`,
+                },
+                () => {
+                    mutate();
+                },
+            )
             .on('broadcast', { event: 'typing' }, ({ payload }) => {
                 const senderId = String(payload?.userId ?? '');
                 if (!senderId || senderId === userId) return;
@@ -295,6 +319,11 @@ export function useChat(roomId: string) {
         mutate();
     };
 
+    const deleteMessage = async (messageId: string) => {
+        await apiClient.delete(`/api/chat/messages/${messageId}`);
+        mutate();
+    };
+
     return {
         messages,
         isLoading: isLoadingInitialData,
@@ -307,6 +336,7 @@ export function useChat(roomId: string) {
         stopTyping,
         sendMessage,
         uploadImageMessage,
+        deleteMessage,
         mutate,
     };
 }

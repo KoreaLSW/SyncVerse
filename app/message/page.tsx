@@ -81,6 +81,7 @@ export default function MessagePage() {
     const [isOpeningDm, setIsOpeningDm] = useState(false);
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [isPreparingImage, setIsPreparingImage] = useState(false);
+    const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
     const [selectedImages, setSelectedImages] = useState<PendingImage[]>([]);
     const [isChatAtBottom, setIsChatAtBottom] = useState(true);
     const [isTabVisible, setIsTabVisible] = useState(true);
@@ -120,6 +121,7 @@ export default function MessagePage() {
         messages: dbMessages,
         sendMessage,
         uploadImageMessage,
+        deleteMessage,
         isPeerTyping,
         peerTypingName,
         notifyTyping,
@@ -459,6 +461,74 @@ export default function MessagePage() {
         }
     };
 
+    const refreshSingleRoomSummary = useCallback(async (roomId: string) => {
+        if (!roomId) return;
+        try {
+            const response = await apiClient.get<{
+                data?: Array<{
+                    roomId: string;
+                    latestMessage: string;
+                    latestAt: string;
+                    unreadCount: number;
+                }>;
+            }>('/api/chat/rooms/summary', {
+                params: {
+                    roomIds: roomId,
+                },
+            });
+            const item = response.data.data?.[0];
+            if (!item) {
+                setRoomSummaryByRoomId((prev) => {
+                    if (!prev[roomId]) return prev;
+                    const next = { ...prev };
+                    delete next[roomId];
+                    return next;
+                });
+                return;
+            }
+            setRoomSummaryByRoomId((prev) => ({
+                ...prev,
+                [roomId]: {
+                    latestMessage: String(item.latestMessage ?? ''),
+                    latestAt: item.latestAt ? formatLatestAt(item.latestAt) : '',
+                    unreadCount: Math.max(0, Number(item.unreadCount ?? 0)),
+                },
+            }));
+        } catch (error) {
+            console.error('단일 대화방 요약 갱신 실패:', error);
+        }
+    }, []);
+
+    const handleDeleteMessage = useCallback(
+        async (messageId: string) => {
+            if (!selectedRoomId || !user?.userId || !messageId) return;
+            const target = currentMessages.find((message) => message.id === messageId);
+            if (!target?.isMine) {
+                alert('본인이 작성한 메시지만 삭제할 수 있습니다.');
+                return;
+            }
+            const confirmed = window.confirm('이 메시지를 삭제할까요?');
+            if (!confirmed) return;
+
+            setDeletingMessageId(messageId);
+            try {
+                await deleteMessage(messageId);
+                await refreshSingleRoomSummary(selectedRoomId);
+            } catch (error) {
+                alert('메시지 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+            } finally {
+                setDeletingMessageId(null);
+            }
+        },
+        [
+            currentMessages,
+            deleteMessage,
+            refreshSingleRoomSummary,
+            selectedRoomId,
+            user?.userId,
+        ],
+    );
+
     const handleRequestDm = async (receiverId: string) => {
         try {
             await requestDm(receiverId);
@@ -726,6 +796,8 @@ export default function MessagePage() {
                     onLeaveRoom={handleLeaveRoom}
                     isLeavingRoom={isLeavingRoom}
                     onBottomStateChange={setIsChatAtBottom}
+                    onDeleteMessage={handleDeleteMessage}
+                    deletingMessageId={deletingMessageId}
                 />
                 {/* 우측 1:1 요청/친구 요청/요청 상태 */}
                 <MessageRequestPanel

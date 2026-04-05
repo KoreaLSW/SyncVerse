@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ChangeEvent } from 'react';
 import type { ChatRoomItem, MessageItem } from '@/lib/message/types';
 
+const DELETED_MESSAGE_TEXT = '삭제된 메세지입니다';
+
 type MessageChatSectionProps = {
     selectedRoom: ChatRoomItem | null;
     messages: MessageItem[];
@@ -19,6 +21,8 @@ type MessageChatSectionProps = {
     onLeaveRoom?: () => void;
     isLeavingRoom?: boolean;
     onBottomStateChange?: (isAtBottom: boolean) => void;
+    onDeleteMessage?: (messageId: string) => void;
+    deletingMessageId?: string | null;
 };
 
 export function MessageChatSection({
@@ -39,6 +43,8 @@ export function MessageChatSection({
     onLeaveRoom,
     isLeavingRoom,
     onBottomStateChange,
+    onDeleteMessage,
+    deletingMessageId,
 }: MessageChatSectionProps) {
     const scrollContainerRef = useRef<HTMLDivElement | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -131,6 +137,10 @@ export function MessageChatSection({
                     </div>
                 ) : (
                     messages.map((message) => (
+                        (() => {
+                            const isDeletedMessage =
+                                message.content.trim() === DELETED_MESSAGE_TEXT;
+                            return (
                         <div
                             key={message.id}
                             className={`flex ${
@@ -151,10 +161,16 @@ export function MessageChatSection({
                                 )}
                                 {message.content.trim() ? (
                                     <p className='text-sm whitespace-pre-wrap'>
-                                        {message.content}
+                                        {isDeletedMessage ? (
+                                            <span className='italic text-white/60'>
+                                                {DELETED_MESSAGE_TEXT}
+                                            </span>
+                                        ) : (
+                                            message.content
+                                        )}
                                     </p>
                                 ) : null}
-                                {message.attachments?.length ? (
+                                {!isDeletedMessage && message.attachments?.length ? (
                                     <div className='mt-2 space-y-2'>
                                         {message.attachments.map((attachment) => {
                                             if (attachment.resourceType !== 'IMAGE') {
@@ -181,6 +197,39 @@ export function MessageChatSection({
                                     </div>
                                 ) : null}
                                 <div className='mt-1 flex items-center justify-end gap-1 text-[11px] text-white/60'>
+                                    {message.isMine &&
+                                    onDeleteMessage &&
+                                    !isDeletedMessage ? (
+                                        <button
+                                            type='button'
+                                            onClick={() => onDeleteMessage(message.id)}
+                                            disabled={deletingMessageId === message.id}
+                                            className='inline-flex h-6 w-6 items-center justify-center rounded bg-rose-500/85 text-white hover:bg-rose-500 disabled:cursor-not-allowed disabled:bg-rose-500/35 disabled:text-white/70'
+                                            aria-label='메시지 삭제'
+                                            title='메시지 삭제'
+                                        >
+                                            {deletingMessageId === message.id ? (
+                                                <span className='text-[9px]'>...</span>
+                                            ) : (
+                                                <svg
+                                                    xmlns='http://www.w3.org/2000/svg'
+                                                    viewBox='0 0 24 24'
+                                                    fill='none'
+                                                    stroke='currentColor'
+                                                    strokeWidth='1.8'
+                                                    strokeLinecap='round'
+                                                    strokeLinejoin='round'
+                                                    className='h-3.5 w-3.5'
+                                                >
+                                                    <path d='M3 6h18' />
+                                                    <path d='M8 6V4h8v2' />
+                                                    <path d='M19 6l-1 14H6L5 6' />
+                                                    <path d='M10 10v7' />
+                                                    <path d='M14 10v7' />
+                                                </svg>
+                                            )}
+                                        </button>
+                                    ) : null}
                                     {message.isMine && message.isReadByPeer ? (
                                         <span className='text-emerald-200/90'>읽음</span>
                                     ) : null}
@@ -188,6 +237,8 @@ export function MessageChatSection({
                                 </div>
                             </div>
                         </div>
+                            );
+                        })()
                     ))
                 )}
             </div>
