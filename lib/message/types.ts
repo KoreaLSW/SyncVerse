@@ -12,6 +12,7 @@ export type ChatRoomItem = {
     id: string;
     name: string;
     type: RoomType;
+    createdBy?: string | null;
     memberCount?: number;
     unreadCount: number;
     latestMessage: string;

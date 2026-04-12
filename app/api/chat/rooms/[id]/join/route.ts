@@ -21,9 +21,12 @@ export async function POST(
     }
 
     try {
+        const body = await request.json().catch(() => ({}));
+        const inputPassword = String(body?.password ?? '');
+
         const { data: room, error: roomError } = await supabase
             .from('chat_rooms')
-            .select('id, type, category')
+            .select('id, type, category, password, max_capacity')
             .eq('id', id)
             .maybeSingle();
         if (roomError) throw roomError;
@@ -35,6 +38,47 @@ export async function POST(
                 { error: 'DM rooms cannot be joined directly' },
                 { status: 403 },
             );
+        }
+
+        const { data: existingParticipant, error: existingParticipantError } =
+            await supabase
+                .from('chat_participants')
+                .select('room_id')
+                .eq('room_id', id)
+                .eq('user_id', authUser.userId)
+                .maybeSingle();
+        if (existingParticipantError) throw existingParticipantError;
+        if (existingParticipant) {
+            return NextResponse.json({
+                success: true,
+                roomId: id,
+                alreadyJoined: true,
+            });
+        }
+
+        const roomPassword = String(room.password ?? '').trim();
+        if (roomPassword && roomPassword !== inputPassword.trim()) {
+            return NextResponse.json(
+                { error: 'Invalid password', code: 'WRONG_PASSWORD' },
+                { status: 403 },
+            );
+        }
+
+        const maxCapacity =
+            typeof room.max_capacity === 'number' ? room.max_capacity : null;
+        if (maxCapacity !== null) {
+            const { count: participantCount, error: participantCountError } =
+                await supabase
+                    .from('chat_participants')
+                    .select('room_id', { count: 'exact', head: true })
+                    .eq('room_id', id);
+            if (participantCountError) throw participantCountError;
+            if (Number(participantCount ?? 0) >= maxCapacity) {
+                return NextResponse.json(
+                    { error: 'Room is full', code: 'ROOM_FULL' },
+                    { status: 409 },
+                );
+            }
         }
 
         const { error: upsertError } = await supabase

@@ -100,29 +100,39 @@ export async function DELETE(
     try {
         const { data: room, error: roomError } = await supabase
             .from('chat_rooms')
-            .select('id, type')
+            .select('id, type, created_by')
             .eq('id', id)
             .maybeSingle();
         if (roomError) throw roomError;
         if (!room) {
             return NextResponse.json({ error: 'Room not found' }, { status: 404 });
         }
-        if (room.type !== 'DM') {
+        if (room.type !== 'DM' && room.type !== 'GROUP') {
             return NextResponse.json(
-                { error: 'Only DM rooms can be deleted here' },
+                { error: 'Only DM/GROUP rooms can be deleted here' },
                 { status: 403 },
             );
         }
 
-        const { data: participant, error: participantError } = await supabase
-            .from('chat_participants')
-            .select('room_id')
-            .eq('room_id', id)
-            .eq('user_id', authUser.userId)
-            .maybeSingle();
-        if (participantError) throw participantError;
-        if (!participant) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        if (room.type === 'GROUP') {
+            const ownerId = String(room.created_by ?? '');
+            if (!ownerId || ownerId !== authUser.userId) {
+                return NextResponse.json(
+                    { error: 'Only group owner can delete this room' },
+                    { status: 403 },
+                );
+            }
+        } else {
+            const { data: participant, error: participantError } = await supabase
+                .from('chat_participants')
+                .select('room_id')
+                .eq('room_id', id)
+                .eq('user_id', authUser.userId)
+                .maybeSingle();
+            if (participantError) throw participantError;
+            if (!participant) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
         }
 
         // 방 삭제 전 첨부 이미지 public_id 수집 후 Cloudinary 리소스 삭제

@@ -112,22 +112,23 @@ COMMENT ON COLUMN comments.parent_id IS '대댓글일 경우 부모 댓글 ID (N
 CREATE TYPE room_type AS ENUM ('DM', 'GROUP', 'SYSTEM');
 CREATE TYPE room_category AS ENUM ('MAIN', 'WHITEBOARD', 'FREE', 'NONE');
 
-CREATE TABLE chat_rooms (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    type room_type NOT NULL,
-    category room_category DEFAULT 'NONE',
-    name VARCHAR(100),
-    password VARCHAR(100),
-    max_capacity INT DEFAULT NULL,
-    last_message_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now()),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc', now())
-);
+create table public.chat_rooms (
+  id uuid not null default extensions.uuid_generate_v4 (),
+  type public.room_type not null,
+  category public.room_category null default 'NONE'::room_category,
+  name character varying(100) null,
+  password character varying(100) null,
+  max_capacity integer null,
+  last_message_at timestamp with time zone null default timezone ('utc'::text, now()),
+  created_at timestamp with time zone null default timezone ('utc'::text, now()),
+  created_by uuid null,
+  constraint chat_rooms_pkey primary key (id),
+  constraint chat_rooms_created_by_fkey foreign KEY (created_by) references users (id) on delete set null
+) TABLESPACE pg_default;
 
-COMMENT ON TABLE chat_rooms IS '채팅방 메타 정보 테이블';
-COMMENT ON COLUMN chat_rooms.type IS '채팅방 유형 (DM: 1:1, GROUP: 유저생성, SYSTEM: 고정방)';
-COMMENT ON COLUMN chat_rooms.category IS '시스템 방의 세부 용도 (MAIN, WHITEBOARD 등)';
-COMMENT ON COLUMN chat_rooms.max_capacity IS '최대 입장 가능 인원 (NULL: 무제한)';
-COMMENT ON COLUMN chat_rooms.last_message_at IS '방 정렬을 위한 마지막 메시지 전송 시간';
+create index IF not exists idx_chat_rooms_type_created_by_created_at on public.chat_rooms using btree (type, created_by, created_at desc) TABLESPACE pg_default;
+
+create index IF not exists idx_chat_rooms_created_by on public.chat_rooms using btree (created_by) TABLESPACE pg_default;
 
 
 -- ==========================================

@@ -1,6 +1,7 @@
 // app/api/chat/rooms/route.ts
 import { supabase } from '@/lib/supabase';
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthUserFromRequest } from '@/lib/server/auth';
 
 export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
@@ -38,16 +39,49 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    const authUser = getAuthUserFromRequest(request);
+    if (!authUser?.userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (authUser.authType === 'guest') {
+        return NextResponse.json({ error: 'Guest not allowed' }, { status: 403 });
+    }
+
     try {
         const body = await request.json();
-        const { type, category, name, password, max_capacity } = body;
+        const type = String(body?.type ?? '').trim().toUpperCase();
+        const category = String(body?.category ?? '').trim().toUpperCase();
+        const name = String(body?.name ?? '').trim();
+        const passwordRaw = String(body?.password ?? '').trim();
+        const maxCapacityRaw = Number(body?.max_capacity);
 
-        if (!type || !category || !name) {
+        if (type !== 'GROUP') {
             return NextResponse.json(
-                { error: 'type, category, name are required' },
+                { error: 'Only GROUP type can be created here' },
                 { status: 400 }
             );
         }
+        if (category !== 'NONE' && category !== 'FREE') {
+            return NextResponse.json(
+                { error: 'Invalid category for GROUP room' },
+                { status: 400 },
+            );
+        }
+        if (!name || name.length >= 50) {
+            return NextResponse.json(
+                { error: 'name is required and must be shorter than 50 characters' },
+                { status: 400 },
+            );
+        }
+        if (!Number.isInteger(maxCapacityRaw) || maxCapacityRaw < 2 || maxCapacityRaw > 50) {
+            return NextResponse.json(
+                { error: 'max_capacity must be an integer between 2 and 50' },
+                { status: 400 },
+            );
+        }
+
+        const password = passwordRaw || null;
+        const max_capacity = maxCapacityRaw;
 
         const { data, error } = await supabase
             .from('chat_rooms')
@@ -58,12 +92,23 @@ export async function POST(request: NextRequest) {
                     name,
                     password,
                     max_capacity,
+                    created_by: authUser.userId,
                 },
             ])
             .select()
             .single();
 
         if (error) throw error;
+
+        const { error: participantError } = await supabase
+            .from('chat_participants')
+            .insert({
+                room_id: data.id,
+                user_id: authUser.userId,
+                last_read_at: new Date().toISOString(),
+            });
+        if (participantError) throw participantError;
+
         return NextResponse.json({ data }, { status: 201 });
     } catch (error: any) {
         return NextResponse.json(

@@ -57,6 +57,33 @@ type OpenDmResponse = {
     } | null;
 };
 
+type CreateGroupRoomResponse = {
+    data?: {
+        id?: string;
+        name?: string | null;
+        max_capacity?: number | null;
+        created_by?: string | null;
+    };
+};
+
+type GroupRoomScope = 'ALL' | 'MY' | 'FRIEND' | 'OTHERS';
+
+type RoomAccessInfo = {
+    roomId: string;
+    isParticipant: boolean;
+    requiresPassword: boolean;
+    maxCapacity: number | null;
+    currentParticipants: number;
+    canJoin: boolean;
+};
+
+const GROUP_ROOM_SCOPE_OPTIONS: Array<{ value: GroupRoomScope; label: string }> = [
+    { value: 'ALL', label: '전체' },
+    { value: 'MY', label: 'My' },
+    { value: 'FRIEND', label: 'Friend' },
+    { value: 'OTHERS', label: '그 외' },
+];
+
 function formatLatestAt(isoTime: string) {
     const timestamp = new Date(isoTime).getTime();
     if (Number.isNaN(timestamp)) return '방금';
@@ -82,10 +109,26 @@ export default function MessagePage() {
     const [isUploadingImage, setIsUploadingImage] = useState(false);
     const [isPreparingImage, setIsPreparingImage] = useState(false);
     const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+    const [isGroupCreateModalOpen, setIsGroupCreateModalOpen] = useState(false);
+    const [groupRoomName, setGroupRoomName] = useState('');
+    const [groupRoomPassword, setGroupRoomPassword] = useState('');
+    const [groupRoomMaxCapacity, setGroupRoomMaxCapacity] = useState('');
+    const [isCreatingGroupRoom, setIsCreatingGroupRoom] = useState(false);
+    const [groupScope, setGroupScope] = useState<GroupRoomScope>('ALL');
     const [selectedImages, setSelectedImages] = useState<PendingImage[]>([]);
     const [isChatAtBottom, setIsChatAtBottom] = useState(true);
     const [isTabVisible, setIsTabVisible] = useState(true);
     const [rooms, setRooms] = useState<ChatRoomItem[]>([]);
+    const [groupRooms, setGroupRooms] = useState<ChatRoomItem[]>([]);
+    const [roomAccessByRoomId, setRoomAccessByRoomId] = useState<
+        Record<string, RoomAccessInfo>
+    >({});
+    const [isCheckingRoomAccess, setIsCheckingRoomAccess] = useState(false);
+    const [groupJoinPassword, setGroupJoinPassword] = useState('');
+    const [isJoiningGroupRoom, setIsJoiningGroupRoom] = useState(false);
+    const [groupJoinErrorMessage, setGroupJoinErrorMessage] = useState<string | null>(
+        null,
+    );
     const {
         searchedUsers,
         isLoading: isSearchLoading,
@@ -117,6 +160,13 @@ export default function MessagePage() {
         requestDm,
     } = useChatRequests();
     const { rooms: myDmRooms, refresh: refreshMyDmRooms } = useMyDmRooms();
+    const selectedRoomAccess = roomAccessByRoomId[selectedRoomId] ?? null;
+    const isSelectedGroupRoom = groupRooms.some((room) => room.id === selectedRoomId);
+    const chatRoomIdForHook = isSelectedGroupRoom
+        ? selectedRoomAccess?.isParticipant
+            ? selectedRoomId
+            : ''
+        : selectedRoomId;
     const {
         messages: dbMessages,
         sendMessage,
@@ -126,7 +176,7 @@ export default function MessagePage() {
         peerTypingName,
         notifyTyping,
         stopTyping,
-    } = useChat(selectedRoomId);
+    } = useChat(chatRoomIdForHook);
     const lastReadCallMsByRoomRef = useRef<Record<string, number>>({});
     const selectedImagesRef = useRef<PendingImage[]>([]);
     const READ_THROTTLE_MS = 700;
@@ -148,6 +198,9 @@ export default function MessagePage() {
 
     const mergedRooms = useMemo(() => {
         const merged = new Map<string, ChatRoomItem>();
+        for (const room of groupRooms) {
+            merged.set(room.id, room);
+        }
         for (const room of rooms) {
             merged.set(room.id, room);
         }
@@ -157,7 +210,7 @@ export default function MessagePage() {
             }
         }
         return Array.from(merged.values());
-    }, [rooms, myDmRooms]);
+    }, [groupRooms, rooms, myDmRooms]);
 
     const roomIds = useMemo(() => mergedRooms.map((room) => room.id), [mergedRooms]);
     const roomIdsKey = useMemo(
@@ -277,6 +330,64 @@ export default function MessagePage() {
         [selectedRoomId, roomsWithLatest],
     );
 
+    const fetchRoomAccess = useCallback(async (roomId: string) => {
+        if (!roomId) return;
+        setIsCheckingRoomAccess(true);
+        try {
+            const response = await apiClient.get<{
+                data?: {
+                    roomId?: string;
+                    isParticipant?: boolean;
+                    requiresPassword?: boolean;
+                    maxCapacity?: number | null;
+                    currentParticipants?: number;
+                    canJoin?: boolean;
+                };
+            }>(`/api/chat/rooms/${roomId}/access`);
+            const data = response.data.data;
+            setRoomAccessByRoomId((prev) => ({
+                ...prev,
+                [roomId]: {
+                    roomId,
+                    isParticipant: !!data?.isParticipant,
+                    requiresPassword: !!data?.requiresPassword,
+                    maxCapacity:
+                        typeof data?.maxCapacity === 'number'
+                            ? data.maxCapacity
+                            : null,
+                    currentParticipants: Math.max(
+                        0,
+                        Number(data?.currentParticipants ?? 0),
+                    ),
+                    canJoin: !!data?.canJoin,
+                },
+            }));
+        } catch (error) {
+            setRoomAccessByRoomId((prev) => ({
+                ...prev,
+                [roomId]: {
+                    roomId,
+                    isParticipant: false,
+                    requiresPassword: false,
+                    maxCapacity: null,
+                    currentParticipants: 0,
+                    canJoin: false,
+                },
+            }));
+        } finally {
+            setIsCheckingRoomAccess(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!selectedRoomId || selectedRoom?.type !== 'GROUP') {
+            setGroupJoinErrorMessage(null);
+            setGroupJoinPassword('');
+            return;
+        }
+        fetchRoomAccess(selectedRoomId);
+    }, [fetchRoomAccess, selectedRoom?.type, selectedRoomId]);
+
     useEffect(() => {
         const handleVisibilityChange = () => {
             setIsTabVisible(document.visibilityState === 'visible');
@@ -328,39 +439,39 @@ export default function MessagePage() {
 
     // 방 전환 시에는 즉시 읽음 처리
     useEffect(() => {
-        if (!selectedRoomId || !user?.userId) return;
-        markRoomAsRead(selectedRoomId, { force: true });
-    }, [selectedRoomId, user?.userId, markRoomAsRead]);
+        if (!chatRoomIdForHook || !user?.userId) return;
+        markRoomAsRead(chatRoomIdForHook, { force: true });
+    }, [chatRoomIdForHook, user?.userId, markRoomAsRead]);
 
     // 현재 방에서 새 메시지를 수신했고, 화면이 보이며 하단이면 읽음 처리
     useEffect(() => {
-        if (!selectedRoomId || !user?.userId) return;
+        if (!chatRoomIdForHook || !user?.userId) return;
         if (!isTabVisible || !isChatAtBottom) return;
         if (!dbMessages?.length) return;
         const latest = dbMessages[dbMessages.length - 1];
         if (!latest) return;
         const latestSenderId = String(latest.sender_id ?? '');
         if (!latestSenderId || latestSenderId === user.userId) return;
-        markRoomAsRead(selectedRoomId);
+        markRoomAsRead(chatRoomIdForHook);
     }, [
         dbMessages?.length,
+        chatRoomIdForHook,
         isChatAtBottom,
         isTabVisible,
         markRoomAsRead,
-        selectedRoomId,
         user?.userId,
     ]);
 
     // 탭이 다시 활성화됐고 현재 방이 보이는 상태면 읽음 처리
     useEffect(() => {
-        if (!selectedRoomId || !user?.userId) return;
+        if (!chatRoomIdForHook || !user?.userId) return;
         if (!isTabVisible || !isChatAtBottom) return;
-        markRoomAsRead(selectedRoomId);
+        markRoomAsRead(chatRoomIdForHook);
     }, [
+        chatRoomIdForHook,
         isChatAtBottom,
         isTabVisible,
         markRoomAsRead,
-        selectedRoomId,
         user?.userId,
     ]);
 
@@ -414,7 +525,7 @@ export default function MessagePage() {
         if (isPreparingImage) return;
         const content = draft.trim();
         const hasSelectedImage = selectedImages.length > 0;
-        if ((!content && !hasSelectedImage) || !selectedRoomId || !user?.userId) {
+        if ((!content && !hasSelectedImage) || !chatRoomIdForHook || !user?.userId) {
             return;
         }
 
@@ -423,7 +534,7 @@ export default function MessagePage() {
             if (hasSelectedImage) {
                 setIsUploadingImage(true);
                 await uploadImageMessage({
-                    room_id: selectedRoomId,
+                    room_id: chatRoomIdForHook,
                     sender_id: user.userId,
                     sender_name: user.nickname || user.username || user.name || '나',
                     files: selectedImages.map((item) => item.file),
@@ -435,7 +546,7 @@ export default function MessagePage() {
                 });
             } else {
                 await sendMessage({
-                    room_id: selectedRoomId,
+                    room_id: chatRoomIdForHook,
                     sender_id: user.userId,
                     sender_name: user.nickname || user.username || user.name || '나',
                     content,
@@ -443,7 +554,7 @@ export default function MessagePage() {
             }
             setRoomSummaryByRoomId((prev) => ({
                 ...prev,
-                [selectedRoomId]: {
+                [chatRoomIdForHook]: {
                     latestMessage:
                         content ||
                         (selectedImages.length > 1
@@ -546,14 +657,14 @@ export default function MessagePage() {
     const handleDraftChange = useCallback(
         (value: string) => {
             setDraft(value);
-            if (!selectedRoomId || !user?.userId) return;
+            if (!chatRoomIdForHook || !user?.userId) return;
             if (value.trim()) {
                 notifyTyping();
                 return;
             }
             stopTyping();
         },
-        [notifyTyping, selectedRoomId, stopTyping, user?.userId],
+        [chatRoomIdForHook, notifyTyping, stopTyping, user?.userId],
     );
 
     const handleOpenDm = async (targetUser: {
@@ -708,7 +819,62 @@ export default function MessagePage() {
     };
 
     const handleLeaveRoom = async () => {
-        if (!selectedRoom || selectedRoom.type !== 'DM') return;
+        if (!selectedRoom) return;
+        if (selectedRoom.type === 'GROUP') {
+            const selectedAccess = roomAccessByRoomId[selectedRoom.id];
+            if (!selectedAccess?.isParticipant) return;
+            const isGroupOwner = selectedRoom.createdBy === user?.userId;
+            const confirmed = window.confirm(
+                isGroupOwner
+                    ? '방장이 채팅방을 삭제하면 대화내역이 함께 삭제됩니다. 계속할까요?'
+                    : '채팅방에서 나가시겠어요?',
+            );
+            if (!confirmed) return;
+
+            setIsLeavingRoom(true);
+            try {
+                if (isGroupOwner) {
+                    await apiClient.delete(`/api/chat/rooms/${selectedRoom.id}`);
+                } else {
+                    await apiClient.post(`/api/chat/rooms/${selectedRoom.id}/leave`);
+                }
+
+                setGroupRooms((prev) =>
+                    prev.filter((room) => room.id !== selectedRoom.id),
+                );
+                setRoomSummaryByRoomId((prev) => {
+                    if (!prev[selectedRoom.id]) return prev;
+                    const next = { ...prev };
+                    delete next[selectedRoom.id];
+                    return next;
+                });
+                setRoomAccessByRoomId((prev) => {
+                    if (!prev[selectedRoom.id]) return prev;
+                    const next = { ...prev };
+                    delete next[selectedRoom.id];
+                    return next;
+                });
+                if (selectedRoomId === selectedRoom.id) {
+                    setSelectedRoomId('');
+                }
+            } catch (error: unknown) {
+                const code = (
+                    error as { response?: { data?: { code?: string } } }
+                )?.response?.data?.code;
+                const message =
+                    code === 'OWNER_DELETE_REQUIRED'
+                        ? '방장은 나가기 대신 채팅방 삭제를 진행해야 합니다.'
+                        : isGroupOwner
+                          ? '그룹 채팅방 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.'
+                          : '채팅방 나가기에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+                alert(message);
+            } finally {
+                setIsLeavingRoom(false);
+            }
+            return;
+        }
+
+        if (selectedRoom.type !== 'DM') return;
         const confirmed = window.confirm(
             '대화방을 나가면 대화내역이 함께 삭제됩니다. 계속할까요?',
         );
@@ -732,6 +898,205 @@ export default function MessagePage() {
             alert('대화방 나가기에 실패했습니다. 잠시 후 다시 시도해 주세요.');
         } finally {
             setIsLeavingRoom(false);
+        }
+    };
+
+    const handleSelectRoom = useCallback(
+        (roomId: string) => {
+            const targetRoom = roomsWithLatest.find((room) => room.id === roomId);
+            if (targetRoom?.type === 'GROUP') {
+                setRoomAccessByRoomId((prev) => ({
+                    ...prev,
+                    [roomId]: prev[roomId] ?? {
+                        roomId,
+                        isParticipant: false,
+                        requiresPassword: false,
+                        maxCapacity: null,
+                        currentParticipants: 0,
+                        canJoin: true,
+                    },
+                }));
+                setGroupJoinPassword('');
+                setGroupJoinErrorMessage(null);
+            }
+            setSelectedRoomId(roomId);
+        },
+        [roomsWithLatest],
+    );
+
+    const handleJoinGroupRoom = useCallback(async () => {
+        if (!selectedRoomId || selectedRoom?.type !== 'GROUP') return;
+        const access = roomAccessByRoomId[selectedRoomId];
+        if (!access?.canJoin) {
+            setGroupJoinErrorMessage('참여 가능한 상태가 아닙니다.');
+            return;
+        }
+        if (access.requiresPassword && !groupJoinPassword.trim()) {
+            setGroupJoinErrorMessage('비밀번호를 입력해 주세요.');
+            return;
+        }
+
+        setIsJoiningGroupRoom(true);
+        setGroupJoinErrorMessage(null);
+        try {
+            await apiClient.post(`/api/chat/rooms/${selectedRoomId}/join`, {
+                password: groupJoinPassword.trim(),
+            });
+            await fetchRoomAccess(selectedRoomId);
+            setGroupJoinPassword('');
+        } catch (error: unknown) {
+            const status = (error as { response?: { status?: number } })?.response
+                ?.status;
+            const code = (
+                error as { response?: { data?: { code?: string } } }
+            )?.response?.data?.code;
+            const message =
+                status === 409 || code === 'ROOM_FULL'
+                    ? '정원이 가득 찬 채팅방입니다.'
+                    : code === 'WRONG_PASSWORD' || status === 403
+                      ? '비밀번호가 올바르지 않습니다.'
+                      : '채팅방 참여에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+            setGroupJoinErrorMessage(message);
+        } finally {
+            setIsJoiningGroupRoom(false);
+        }
+    }, [
+        fetchRoomAccess,
+        groupJoinPassword,
+        roomAccessByRoomId,
+        selectedRoom?.type,
+        selectedRoomId,
+    ]);
+
+    const handleOpenGroupCreateModal = () => {
+        setIsGroupCreateModalOpen(true);
+    };
+
+    const handleCloseGroupCreateModal = () => {
+        if (isCreatingGroupRoom) return;
+        setIsGroupCreateModalOpen(false);
+        setGroupRoomName('');
+        setGroupRoomPassword('');
+        setGroupRoomMaxCapacity('');
+    };
+
+    const loadGroupRooms = useCallback(async (scope: GroupRoomScope) => {
+        const scopeParam =
+            scope === 'MY'
+                ? 'my'
+                : scope === 'FRIEND'
+                  ? 'friend'
+                  : scope === 'OTHERS'
+                    ? 'others'
+                    : 'all';
+        try {
+            const response = await apiClient.get<{
+                data?: Array<{
+                    id?: string;
+                    name?: string | null;
+                    memberCount?: number | null;
+                    createdBy?: string | null;
+                }>;
+            }>('/api/chat/rooms/group', {
+                params: { scope: scopeParam },
+            });
+            const nextGroupRooms: ChatRoomItem[] = [];
+            for (const room of response.data.data ?? []) {
+                const roomId = String(room.id ?? '');
+                if (!roomId) continue;
+                nextGroupRooms.push({
+                    id: roomId,
+                    name: String(room.name ?? '그룹 채팅방'),
+                    type: 'GROUP',
+                    memberCount:
+                        typeof room.memberCount === 'number'
+                            ? room.memberCount
+                            : undefined,
+                    createdBy: room.createdBy ? String(room.createdBy) : null,
+                    unreadCount: 0,
+                    latestMessage: '',
+                    latestAt: '',
+                });
+            }
+            setGroupRooms(nextGroupRooms);
+        } catch (error) {
+            console.error('그룹 채팅방 목록 로드 실패:', error);
+            setGroupRooms([]);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (filter !== 'GROUP') return;
+        if (!user?.userId || user.authType === 'guest') return;
+        loadGroupRooms(groupScope);
+    }, [filter, groupScope, loadGroupRooms, user?.authType, user?.userId]);
+
+    const parsedGroupRoomMaxCapacity = Number(groupRoomMaxCapacity);
+    const isGroupRoomNameValid = groupRoomName.trim().length > 0;
+    const isGroupRoomMaxCapacityValid =
+        Number.isInteger(parsedGroupRoomMaxCapacity) &&
+        parsedGroupRoomMaxCapacity >= 2 &&
+        parsedGroupRoomMaxCapacity <= 50;
+    const canSubmitGroupRoomCreate =
+        isGroupRoomNameValid && isGroupRoomMaxCapacityValid;
+
+    const handleCreateGroupRoom = async () => {
+        if (isCreatingGroupRoom) return;
+        const trimmedName = groupRoomName.trim();
+        if (!trimmedName) {
+            alert('채팅방 이름은 필수 입력입니다.');
+            return;
+        }
+        if (!groupRoomMaxCapacity.trim()) {
+            alert('최대 인원수는 필수 입력입니다.');
+            return;
+        }
+        if (trimmedName.length >= 50) {
+            alert('채팅방 이름은 50자 미만으로 입력해 주세요.');
+            return;
+        }
+        if (!isGroupRoomMaxCapacityValid) {
+            alert('최대 인원수는 2명 이상 50명 이하로 입력해 주세요.');
+            return;
+        }
+
+        setIsCreatingGroupRoom(true);
+        try {
+            const response = await apiClient.post<CreateGroupRoomResponse>(
+                '/api/chat/rooms',
+                {
+                    type: 'GROUP',
+                    category: 'NONE',
+                    name: trimmedName,
+                    password: groupRoomPassword.trim() || null,
+                    max_capacity: Number(groupRoomMaxCapacity),
+                },
+            );
+            const created = response.data.data;
+            const roomId = String(created?.id ?? '');
+            if (!roomId) {
+                throw new Error('room id missing');
+            }
+            setFilter('GROUP');
+            setGroupScope('MY');
+            setSelectedRoomId(roomId);
+            await loadGroupRooms('MY');
+            setIsGroupCreateModalOpen(false);
+            setGroupRoomName('');
+            setGroupRoomPassword('');
+            setGroupRoomMaxCapacity('');
+        } catch (error: unknown) {
+            const status = (error as { response?: { status?: number } })?.response
+                ?.status;
+            const message =
+                status === 400
+                    ? '입력값을 확인해 주세요. (이름 50자 미만, 최대 인원 2~50)'
+                    : status === 403
+                      ? '게스트 계정은 그룹 채팅방을 생성할 수 없습니다.'
+                      : '그룹 채팅방 생성에 실패했습니다. 잠시 후 다시 시도해 주세요.';
+            alert(message);
+        } finally {
+            setIsCreatingGroupRoom(false);
         }
     };
 
@@ -761,7 +1126,11 @@ export default function MessagePage() {
                     currentFilter={filter}
                     selectedRoomId={selectedRoomId}
                     onFilterChange={setFilter}
-                    onSelectRoom={setSelectedRoomId}
+                    onSelectRoom={handleSelectRoom}
+                    onCreateGroup={handleOpenGroupCreateModal}
+                    groupScopes={GROUP_ROOM_SCOPE_OPTIONS}
+                    currentGroupScope={groupScope}
+                    onGroupScopeChange={setGroupScope}
                 />
                 {/* 메세지 내용 */}
                 <MessageChatSection
@@ -774,7 +1143,10 @@ export default function MessagePage() {
                     peerTypingName={peerTypingName}
                     onTypingStop={() => stopTyping()}
                     canSend={
-                        !isPreparingImage && (!!draft.trim() || selectedImages.length > 0)
+                        !isPreparingImage &&
+                        (!!draft.trim() || selectedImages.length > 0) &&
+                        (selectedRoom?.type !== 'GROUP' ||
+                            !!roomAccessByRoomId[selectedRoom.id]?.isParticipant)
                     }
                     selectedImagePreviews={selectedImages.map((item) => ({
                         id: item.id,
@@ -798,6 +1170,37 @@ export default function MessagePage() {
                     onBottomStateChange={setIsChatAtBottom}
                     onDeleteMessage={handleDeleteMessage}
                     deletingMessageId={deletingMessageId}
+                    isGroupParticipant={
+                        selectedRoom?.type !== 'GROUP' ||
+                        !!roomAccessByRoomId[selectedRoom.id]?.isParticipant
+                    }
+                    isCheckingRoomAccess={isCheckingRoomAccess}
+                    requiresJoinPassword={
+                        selectedRoom?.type === 'GROUP'
+                            ? !!roomAccessByRoomId[selectedRoom.id]?.requiresPassword
+                            : false
+                    }
+                    groupJoinPassword={groupJoinPassword}
+                    onGroupJoinPasswordChange={setGroupJoinPassword}
+                    onJoinGroupRoom={handleJoinGroupRoom}
+                    isJoiningGroupRoom={isJoiningGroupRoom}
+                    groupJoinErrorMessage={groupJoinErrorMessage}
+                    groupRoomAccessMeta={
+                        selectedRoom?.type === 'GROUP'
+                            ? {
+                                  currentParticipants:
+                                      roomAccessByRoomId[selectedRoom.id]
+                                          ?.currentParticipants ?? 0,
+                                  maxCapacity:
+                                      roomAccessByRoomId[selectedRoom.id]
+                                          ?.maxCapacity ?? null,
+                              }
+                            : null
+                    }
+                    isGroupOwner={
+                        selectedRoom?.type === 'GROUP' &&
+                        selectedRoom.createdBy === user?.userId
+                    }
                 />
                 {/* 우측 1:1 요청/친구 요청/요청 상태 */}
                 <MessageRequestPanel
@@ -829,6 +1232,108 @@ export default function MessagePage() {
                     onDeleteDm={handleDeleteDm}
                 />
             </div>
+            {isGroupCreateModalOpen ? (
+                <div className='fixed inset-0 z-50 flex items-center justify-center bg-black/65 p-4'>
+                    <div className='w-full max-w-md rounded-xl border border-white/15 bg-slate-950 p-4 shadow-2xl'>
+                        <div className='mb-4 flex items-center justify-between'>
+                            <h3 className='text-base font-bold'>그룹 채팅방 생성</h3>
+                            <button
+                                type='button'
+                                onClick={handleCloseGroupCreateModal}
+                                className='rounded bg-white/10 px-2 py-1 text-xs text-white/70 hover:bg-white/20'
+                            >
+                                닫기
+                            </button>
+                        </div>
+
+                        <div className='space-y-3'>
+                            <label className='block'>
+                                <div className='mb-1 text-xs text-white/70'>
+                                    채팅방 이름
+                                </div>
+                                <input
+                                    value={groupRoomName}
+                                    onChange={(event) =>
+                                        setGroupRoomName(event.target.value)
+                                    }
+                                    placeholder='예: 우리끼리 수다방'
+                                    maxLength={49}
+                                    required
+                                    className='w-full rounded border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-blue-400/70'
+                                />
+                                <div className='mt-1 text-[11px] text-white/55'>
+                                    필수 입력, 50자 미만
+                                </div>
+                            </label>
+
+                            <label className='block'>
+                                <div className='mb-1 text-xs text-white/70'>
+                                    입장 비밀번호 (선택)
+                                </div>
+                                <input
+                                    type='password'
+                                    value={groupRoomPassword}
+                                    onChange={(event) =>
+                                        setGroupRoomPassword(event.target.value)
+                                    }
+                                    placeholder='없으면 비워두세요'
+                                    maxLength={100}
+                                    className='w-full rounded border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-blue-400/70'
+                                />
+                            </label>
+
+                            <label className='block'>
+                                <div className='mb-1 text-xs text-white/70'>
+                                    최대 인원수
+                                </div>
+                                <input
+                                    type='number'
+                                    min={2}
+                                    max={50}
+                                    value={groupRoomMaxCapacity}
+                                    onChange={(event) => {
+                                        const next = event.target.value;
+                                        if (!next) {
+                                            setGroupRoomMaxCapacity('');
+                                            return;
+                                        }
+                                        const nextNumber = Number(next);
+                                        if (Number.isNaN(nextNumber)) return;
+                                        setGroupRoomMaxCapacity(
+                                            String(Math.min(nextNumber, 50)),
+                                        );
+                                    }}
+                                    placeholder='예: 10'
+                                    required
+                                    className='w-full rounded border border-white/15 bg-white/5 px-3 py-2 text-sm text-white outline-none focus:border-blue-400/70'
+                                />
+                                <div className='mt-1 text-[11px] text-white/55'>
+                                    필수 입력, 2명 이상 50명 이하
+                                </div>
+                            </label>
+                        </div>
+
+                        <div className='mt-4 flex justify-end gap-2'>
+                            <button
+                                type='button'
+                                onClick={handleCloseGroupCreateModal}
+                                disabled={isCreatingGroupRoom}
+                                className='rounded bg-white/10 px-3 py-2 text-sm text-white/80 hover:bg-white/20'
+                            >
+                                취소
+                            </button>
+                            <button
+                                type='button'
+                                onClick={handleCreateGroupRoom}
+                                disabled={isCreatingGroupRoom}
+                                className='rounded bg-blue-500 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-400'
+                            >
+                                {isCreatingGroupRoom ? '생성 중...' : '생성'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </main>
     );
 }

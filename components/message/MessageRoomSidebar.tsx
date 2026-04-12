@@ -1,5 +1,7 @@
 import type { ChatRoomItem, RoomFilter } from '@/lib/message/types';
 
+type GroupScope = 'ALL' | 'MY' | 'FRIEND' | 'OTHERS';
+
 type MessageRoomSidebarProps = {
     rooms: ChatRoomItem[];
     totalCount: number;
@@ -8,6 +10,10 @@ type MessageRoomSidebarProps = {
     selectedRoomId: string;
     onFilterChange: (filter: RoomFilter) => void;
     onSelectRoom: (roomId: string) => void;
+    onCreateGroup?: () => void;
+    groupScopes?: Array<{ value: GroupScope; label: string }>;
+    currentGroupScope?: GroupScope;
+    onGroupScopeChange?: (scope: GroupScope) => void;
 };
 
 export function MessageRoomSidebar({
@@ -18,6 +24,10 @@ export function MessageRoomSidebar({
     selectedRoomId,
     onFilterChange,
     onSelectRoom,
+    onCreateGroup,
+    groupScopes,
+    currentGroupScope,
+    onGroupScopeChange,
 }: MessageRoomSidebarProps) {
     return (
         <section className='rounded-xl border border-white/10 bg-black/40 p-4 backdrop-blur-md'>
@@ -42,6 +52,35 @@ export function MessageRoomSidebar({
                     </button>
                 ))}
             </div>
+            {currentFilter === 'GROUP' ? (
+                <div className='mb-3 space-y-2'>
+                    <button
+                        type='button'
+                        onClick={() => onCreateGroup?.()}
+                        className='w-full rounded-md border border-cyan-300/25 bg-cyan-500/20 px-3 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/30'
+                    >
+                        + 그룹 채팅방 생성
+                    </button>
+                    {groupScopes?.length ? (
+                        <div className='grid grid-cols-2 gap-1'>
+                            {groupScopes.map((scope) => (
+                                <button
+                                    key={scope.value}
+                                    type='button'
+                                    onClick={() => onGroupScopeChange?.(scope.value)}
+                                    className={`rounded px-2 py-1 text-xs transition-colors ${
+                                        currentGroupScope === scope.value
+                                            ? 'bg-blue-500/90 text-white'
+                                            : 'bg-white/10 text-white/70 hover:bg-white/20'
+                                    }`}
+                                >
+                                    {scope.label}
+                                </button>
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            ) : null}
 
             <div className='max-h-[65vh] space-y-2 overflow-y-auto pr-1'>
                 {rooms.map((room) => (
