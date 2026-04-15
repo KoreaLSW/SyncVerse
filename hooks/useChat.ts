@@ -98,7 +98,7 @@ export function useChat(roomId: string) {
         );
     }, [data]);
 
-    const isLoadingInitialData = !data && !isValidating;
+    const isLoadingInitialData = !data && isValidating;
     const isLoadingMore =
         isValidating ||
         (size > 0 && data && typeof data[size - 1] === 'undefined');

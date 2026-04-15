@@ -26,4 +26,16 @@ export const TRIGGER_ZONES: Zone[] = [
         onEnter: () => {},
         onExit: () => {},
     },
+    {
+        id: 'settings',
+        x: 1200,
+        y: 1200,
+        width: 100,
+        height: 100,
+        label: '설정',
+        imagePath: '/locations/setting.png',
+        pagePath: '/settings',
+        onEnter: () => {},
+        onExit: () => {},
+    },
 ];

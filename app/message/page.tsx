@@ -169,6 +169,7 @@ export default function MessagePage() {
         : selectedRoomId;
     const {
         messages: dbMessages,
+        isLoading: isLoadingMessages,
         sendMessage,
         uploadImageMessage,
         deleteMessage,
@@ -1136,6 +1137,7 @@ export default function MessagePage() {
                 <MessageChatSection
                     selectedRoom={selectedRoom}
                     messages={currentMessages}
+                    isLoadingMessages={isLoadingMessages}
                     draft={draft}
                     onDraftChange={handleDraftChange}
                     onSend={handleSend}

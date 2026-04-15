@@ -2,6 +2,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
+const NICKNAME_REGEX = /^[A-Za-z0-9가-힣]{1,12}$/;
+
 // GET /api/users/[id] - 특정 사용자 조회
 export async function GET(
     request: NextRequest,
@@ -31,8 +33,39 @@ export async function PATCH(
     try {
         const { username } = await params;
         const body = await request.json();
-
         const updateData: any = {};
+
+        // 닉네임 처리
+        if (body.nickname !== undefined) {
+            const nickname = String(body.nickname ?? '').trim();
+
+            if (!NICKNAME_REGEX.test(nickname)) {
+                return NextResponse.json(
+                    {
+                        error: 'Nickname must be 1-12 characters (Korean/English/number only)',
+                    },
+                    { status: 400 }
+                );
+            }
+
+            const { data: duplicateUsers, error: duplicateError } = await supabase
+                .from('users')
+                .select('username')
+                .neq('username', username)
+                .ilike('nickname', nickname)
+                .limit(1);
+
+            if (duplicateError) throw duplicateError;
+
+            if ((duplicateUsers ?? []).length > 0) {
+                return NextResponse.json(
+                    { error: 'Nickname already exists' },
+                    { status: 409 }
+                );
+            }
+
+            updateData.nickname = nickname;
+        }
 
         // 위치 정보 처리
         if (body.position_x !== undefined)

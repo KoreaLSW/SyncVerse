@@ -6,6 +6,7 @@ const DELETED_MESSAGE_TEXT = '삭제된 메세지입니다';
 type MessageChatSectionProps = {
     selectedRoom: ChatRoomItem | null;
     messages: MessageItem[];
+    isLoadingMessages?: boolean;
     draft: string;
     onDraftChange: (value: string) => void;
     onSend: () => void;
@@ -41,6 +42,7 @@ type MessageChatSectionProps = {
 export function MessageChatSection({
     selectedRoom,
     messages,
+    isLoadingMessages = false,
     draft,
     onDraftChange,
     onSend,
@@ -233,6 +235,11 @@ export function MessageChatSection({
                                       : '참여하기'}
                             </button>
                         </div>
+                    </div>
+                ) : isLoadingMessages && !!selectedRoom?.id ? (
+                    <div className='h-full flex flex-col items-center justify-center gap-3 text-white/70'>
+                        <div className='h-8 w-8 rounded-full border-2 border-white/20 border-t-cyan-300 animate-spin' />
+                        <p className='text-sm'>로딩중...</p>
                     </div>
                 ) : messages.length === 0 ? (
                     <div className='h-full flex items-center justify-center text-white/50 text-sm'>
